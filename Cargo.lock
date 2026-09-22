@@ -204,7 +204,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
 name = "bergshamra"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64",
  "bergshamra-c14n",
@@ -222,7 +222,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-c14n"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "bergshamra-xml",
@@ -233,14 +233,14 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-core"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "bergshamra-crypto"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "hex",
@@ -252,7 +252,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-dsig"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64",
  "bergshamra-c14n",
@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-enc"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64",
  "bergshamra-c14n",
@@ -284,7 +284,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-keys"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64",
  "bergshamra-core",
@@ -320,7 +320,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-pkcs12"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "cipher 0.5.2",
@@ -331,7 +331,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-transforms"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64",
  "bergshamra-c14n",
@@ -344,7 +344,7 @@ dependencies = [
 
 [[package]]
 name = "bergshamra-xml"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "uppsala",
@@ -359,7 +359,7 @@ dependencies = [
  "bitflags",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -666,7 +666,7 @@ dependencies = [
  "clap",
  "criterion-plot",
  "is-terminal",
- "itertools 0.10.5",
+ "itertools",
  "num-traits",
  "once_cell",
  "oorandom",
@@ -687,7 +687,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b50826342786a51a89e2da3a28f1c32b06e387201bc2d19791f622c673706b1"
 dependencies = [
  "cast",
- "itertools 0.10.5",
+ "itertools",
 ]
 
 [[package]]
@@ -772,9 +772,9 @@ dependencies = [
 
 [[package]]
 name = "cryptoki"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff765b99fc49f3116c9a908484486a2b92fd73c48da45c3a69716471c6cc56c6"
+checksum = "625cf4599c43d69a16996ce2573fc80745a0b0300c962f0bfa11d55b6cab2b2d"
 dependencies = [
  "bitflags",
  "cryptoki-sys",
@@ -1329,15 +1329,6 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
@@ -1986,9 +1977,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "once_cell",

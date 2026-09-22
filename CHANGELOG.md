@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.1 [2026-09-22]
+
+### Changed
+
+- XML-DSig reference hashing now batches small canonicalization writes before
+  updating the digest, avoiding a dynamic digest call for each punctuation or
+  escaped byte while preserving the canonical byte order.
+- Exclusive C14N now tracks in-scope and rendered namespace bindings with
+  reversible traversal state instead of rebuilding and cloning namespace maps
+  for every element. Namespace declarations and attributes stream directly to
+  the output sink without temporary rendered strings.
+- Updated `cryptoki` to 0.12.1 and `rustls` to 0.23.45 to address
+  RUSTSEC-2026-0286 and RUSTSEC-2026-0285.
+
 ## 0.9.0 [2026-09-02]
 
 ### Changed
