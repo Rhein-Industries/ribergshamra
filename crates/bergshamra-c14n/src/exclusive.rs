@@ -71,7 +71,9 @@ pub fn canonicalize_to<S: AsRef<str>, W: C14nSink>(
         node_set,
         inclusive_prefixes: prefix_set,
     };
-    ctx.process_node(doc.root(), output, &BTreeMap::new())
+    let mut rendered_ns = BTreeMap::new();
+    let mut inscope_ns = BTreeMap::new();
+    ctx.process_node(doc.root(), output, &mut rendered_ns, &mut inscope_ns)
 }
 
 struct ExcC14nContext<'a, 'doc> {
@@ -102,16 +104,23 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
         &mut self,
         id: NodeId,
         output: &mut W,
-        rendered_ns: &BTreeMap<String, String>,
+        rendered_ns: &mut BTreeMap<String, String>,
+        inscope_ns: &mut BTreeMap<String, String>,
     ) -> Result<(), Error> {
         match self.doc.node_kind(id) {
             Some(NodeKind::Document) => {
                 for child in self.doc.children_iter(id) {
-                    self.process_node(child, output, rendered_ns)?;
+                    self.process_node(child, output, rendered_ns, inscope_ns)?;
                 }
             }
             Some(NodeKind::Element(_)) => {
-                self.process_element(id, output, rendered_ns)?;
+                // Namespace scope follows every element, including invisible
+                // ones. Apply only this element's declarations and restore the
+                // parent scope after its complete subtree has been visited.
+                let scope_changes = apply_element_namespaces(self.doc, id, inscope_ns);
+                let result = self.process_element(id, output, rendered_ns, inscope_ns);
+                restore_namespaces(inscope_ns, scope_changes);
+                result?;
             }
             Some(NodeKind::Text(text)) | Some(NodeKind::CData(text)) if self.is_visible(id) => {
                 escape::escape_text_into(output, text);
@@ -190,7 +199,8 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
         &mut self,
         id: NodeId,
         output: &mut W,
-        rendered_ns: &BTreeMap<String, String>,
+        rendered_ns: &mut BTreeMap<String, String>,
+        inscope_ns: &mut BTreeMap<String, String>,
     ) -> Result<(), Error> {
         let visible = self.is_visible(id);
 
@@ -224,22 +234,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                 }
             }
 
-            // Collect all in-scope namespaces
-            let inscope_ns = collect_inscope_namespaces(self.doc, id);
-
-            // If namespace node visibility filtering is active, restrict
-            // to only namespace nodes that are in the node set.
             let has_ns_filter = self.node_set.is_some_and(|ns| ns.has_ns_visible());
-            let visible_inscope_ns = if has_ns_filter {
-                let eid = id.index();
-                let ns = self.node_set.unwrap();
-                inscope_ns
-                    .into_iter()
-                    .filter(|(prefix, _)| ns.is_ns_visible(eid, prefix))
-                    .collect()
-            } else {
-                inscope_ns
-            };
 
             // Determine which namespace declarations to output
             let mut ns_decls: Vec<NsDecl> = Vec::new();
@@ -249,7 +244,9 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                     continue;
                 }
 
-                if let Some(uri) = visible_inscope_ns.get(prefix) {
+                if let Some(uri) =
+                    visible_namespace_uri(inscope_ns, self.node_set, id, prefix, has_ns_filter)
+                {
                     // Only output if different from what was previously rendered
                     let previously_rendered = rendered_ns.get(prefix);
                     if previously_rendered != Some(uri) {
@@ -304,17 +301,20 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
             output.write_byte(b'<');
             output.write(elem_name.as_bytes());
             for ns_decl in &ns_decls {
-                output.write(ns_decl.render().as_bytes());
+                ns_decl.write_to(output);
             }
             for attr in &attrs {
-                output.write(attr.render().as_bytes());
+                attr.write_to(output);
             }
             output.write_byte(b'>');
 
-            // Update rendered namespace context for children.
-            let mut child_rendered_ns = rendered_ns.clone();
+            // Update the shared rendered namespace context for children. An
+            // undo log restores the parent bindings after this subtree,
+            // avoiding a complete map clone for every visible element.
+            let mut rendered_changes = Vec::new();
             for ns_decl in &ns_decls {
-                child_rendered_ns.insert(ns_decl.prefix.clone(), ns_decl.uri.clone());
+                let previous = rendered_ns.insert(ns_decl.prefix.clone(), ns_decl.uri.clone());
+                rendered_changes.push((ns_decl.prefix.clone(), previous));
             }
 
             // When ns_visible filtering is active, break the rendering
@@ -329,16 +329,24 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                     if prefix == "xml" {
                         continue;
                     }
-                    if !visible_inscope_ns.contains_key(prefix.as_str()) {
-                        child_rendered_ns.remove(prefix.as_str());
+                    if visible_namespace_uri(inscope_ns, self.node_set, id, prefix, true).is_none()
+                    {
+                        let previous = rendered_ns.remove(prefix.as_str());
+                        rendered_changes.push((prefix.clone(), previous));
                     }
                 }
             }
 
-            // Process children
-            for child in self.doc.children_iter(id) {
-                self.process_node(child, output, &child_rendered_ns)?;
-            }
+            // Restore rendered bindings even if a descendant reports an
+            // error, keeping the traversal state internally consistent.
+            let child_result: Result<(), Error> = (|| {
+                for child in self.doc.children_iter(id) {
+                    self.process_node(child, output, rendered_ns, inscope_ns)?;
+                }
+                Ok(())
+            })();
+            restore_namespaces(rendered_ns, rendered_changes);
+            child_result?;
 
             // Close tag
             output.write(b"</");
@@ -354,18 +362,18 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
             if has_ns_filter && !self.inclusive_prefixes.is_empty() {
                 let eid = id.index();
                 let ns = self.node_set.unwrap();
-                let inscope = collect_inscope_namespaces(self.doc, id);
-                let visible_ns: BTreeMap<String, String> = inscope
-                    .into_iter()
+                let visible_ns: BTreeMap<String, String> = inscope_ns
+                    .iter()
                     .filter(|(prefix, _)| ns.is_ns_visible(eid, prefix))
                     .filter(|(prefix, _)| {
                         // Only output for InclusiveNamespaces PrefixList
                         if prefix.is_empty() {
                             self.inclusive_prefixes.iter().any(|p| p == "#default")
                         } else {
-                            self.inclusive_prefixes.contains(prefix)
+                            self.inclusive_prefixes.contains(prefix.as_str())
                         }
                     })
+                    .map(|(prefix, uri)| (prefix.clone(), uri.clone()))
                     .collect();
                 let mut ns_decls: Vec<NsDecl> = Vec::new();
                 for (prefix, uri) in &visible_ns {
@@ -381,14 +389,14 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                 }
                 ns_decls.sort();
                 for ns_decl in &ns_decls {
-                    output.write(ns_decl.render().as_bytes());
+                    ns_decl.write_to(output);
                 }
             }
 
             // Children inherit same rendered_ns (invisible element
             // doesn't affect the visible ancestor tracking).
             for child in self.doc.children_iter(id) {
-                self.process_node(child, output, rendered_ns)?;
+                self.process_node(child, output, rendered_ns, inscope_ns)?;
             }
         }
         Ok(())
@@ -437,32 +445,64 @@ fn get_attr_prefix(attr: &uppsala::Attribute<'_>) -> Option<String> {
     }
 }
 
-/// Collect all in-scope namespaces for an element.
-fn collect_inscope_namespaces(doc: &Document<'_>, id: NodeId) -> BTreeMap<String, String> {
-    let mut ns_stack: Vec<BTreeMap<String, String>> = Vec::new();
-    let mut current = Some(id);
-    while let Some(n) = current {
-        if let Some(elem) = doc.element(n) {
-            let mut level = BTreeMap::new();
-            for (prefix, uri) in &elem.namespace_declarations {
-                level.insert(prefix.to_string(), uri.to_string());
-            }
-            ns_stack.push(level);
-        }
-        current = doc.parent(n);
-    }
+/// Record namespace-map mutations so a completed subtree can restore its
+/// parent's bindings without cloning the entire map.
+type NamespaceChanges = Vec<(String, Option<String>)>;
 
-    let mut result = BTreeMap::new();
-    for level in ns_stack.into_iter().rev() {
-        for (prefix, uri) in level {
-            if uri.is_empty() {
-                result.remove(&prefix);
+/// Apply one element's namespace declarations to the current in-scope map.
+///
+/// Empty namespace URIs undeclare their prefix. The returned undo log must be
+/// passed to [`restore_namespaces`] after processing the element's subtree.
+fn apply_element_namespaces(
+    doc: &Document<'_>,
+    id: NodeId,
+    inscope_ns: &mut BTreeMap<String, String>,
+) -> NamespaceChanges {
+    let mut changes = Vec::new();
+    if let Some(elem) = doc.element(id) {
+        for (prefix, uri) in &elem.namespace_declarations {
+            let prefix = prefix.to_string();
+            let previous = if uri.is_empty() {
+                inscope_ns.remove(&prefix)
             } else {
-                result.insert(prefix, uri);
-            }
+                inscope_ns.insert(prefix.clone(), uri.to_string())
+            };
+            changes.push((prefix, previous));
         }
     }
-    result
+    changes
+}
+
+/// Restore namespace bindings from an undo log in reverse mutation order.
+///
+/// Reverse application is required when one traversal step changes the same
+/// prefix more than once, as can happen when rendered namespace filtering
+/// removes a declaration that was just emitted.
+fn restore_namespaces(namespaces: &mut BTreeMap<String, String>, changes: NamespaceChanges) {
+    for (prefix, previous) in changes.into_iter().rev() {
+        if let Some(uri) = previous {
+            namespaces.insert(prefix, uri);
+        } else {
+            namespaces.remove(&prefix);
+        }
+    }
+}
+
+/// Return an in-scope URI when its namespace node is visible for this element.
+///
+/// The visibility lookup stays on the borrowed incremental map, avoiding the
+/// filtered map allocation previously performed for every visible element.
+fn visible_namespace_uri<'a>(
+    inscope_ns: &'a BTreeMap<String, String>,
+    node_set: Option<&NodeSet>,
+    id: NodeId,
+    prefix: &str,
+    has_ns_filter: bool,
+) -> Option<&'a String> {
+    if has_ns_filter && !node_set.is_some_and(|set| set.is_ns_visible(id.index(), prefix)) {
+        return None;
+    }
+    inscope_ns.get(prefix)
 }
 
 /// Get the qualified element name.
@@ -623,5 +663,30 @@ mod tests {
         // With "xs" in InclusiveNamespaces PrefixList, the xs namespace should
         // be rendered on elements even though it's not visibly utilized.
         assert!(output.contains("xmlns:xs=\"http://www.w3.org/2001/XMLSchema\""));
+    }
+
+    #[test]
+    fn test_exc_c14n_restores_namespace_bindings_between_siblings() {
+        // A nested prefix rebind must not leak into a later sibling. This also
+        // exercises incremental in-scope and rendered namespace undo logs.
+        let input = r#"<r xmlns="urn:root" xmlns:p="urn:one"><p:a><x xmlns:p="urn:two"><p:b/></x></p:a><p:c/></r>"#;
+        let doc = uppsala::parse(input).unwrap();
+        let result = canonicalize(&doc, false, None, &[] as &[&str]).unwrap();
+        let output = String::from_utf8(result).unwrap();
+        let expected = r#"<r xmlns="urn:root"><p:a xmlns:p="urn:one"><x><p:b xmlns:p="urn:two"></p:b></x></p:a><p:c xmlns:p="urn:one"></p:c></r>"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn test_exc_c14n_restores_default_namespace_after_undeclaration() {
+        // The empty namespace applies only to the nested subtree; the final
+        // sibling must inherit and render the root's default namespace.
+        let input = r#"<r xmlns="urn:root"><plain xmlns=""><child/></plain><again/></r>"#;
+        let doc = uppsala::parse(input).unwrap();
+        let result = canonicalize(&doc, false, None, &[] as &[&str]).unwrap();
+        let output = String::from_utf8(result).unwrap();
+        let expected =
+            r#"<r xmlns="urn:root"><plain xmlns=""><child></child></plain><again></again></r>"#;
+        assert_eq!(output, expected);
     }
 }

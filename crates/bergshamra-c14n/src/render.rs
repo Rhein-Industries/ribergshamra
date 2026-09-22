@@ -7,7 +7,7 @@
 //! the required escaping. Most users should call the `canonicalize*` functions
 //! instead of using this module directly.
 
-use crate::escape;
+use crate::{escape, C14nSink};
 
 /// A namespace declaration prepared for canonical XML output.
 ///
@@ -23,6 +23,22 @@ pub struct NsDecl {
 }
 
 impl NsDecl {
+    /// Write this namespace declaration directly into a canonical byte sink.
+    ///
+    /// Unlike [`Self::render`], this streaming form does not allocate a
+    /// temporary `String`. The leading space and canonical escaping are
+    /// identical to the buffered representation.
+    pub fn write_to<W: C14nSink>(&self, output: &mut W) {
+        output.write(b" xmlns");
+        if !self.prefix.is_empty() {
+            output.write_byte(b':');
+            output.write(self.prefix.as_bytes());
+        }
+        output.write(b"=\"");
+        escape::escape_attr_into(output, &self.uri);
+        output.write_byte(b'"');
+    }
+
     /// Render this namespace declaration as canonical XML.
     ///
     /// The returned string includes the leading space before `xmlns`, so it can
@@ -78,6 +94,19 @@ pub struct Attr {
 }
 
 impl Attr {
+    /// Write this attribute directly into a canonical byte sink.
+    ///
+    /// This avoids allocating the escaped value and formatted attribute
+    /// string separately. Output remains byte-for-byte equivalent to
+    /// [`Self::render`], including its leading space.
+    pub fn write_to<W: C14nSink>(&self, output: &mut W) {
+        output.write_byte(b' ');
+        output.write(self.qualified_name.as_bytes());
+        output.write(b"=\"");
+        escape::escape_attr_into(output, &self.value);
+        output.write_byte(b'"');
+    }
+
     /// Render this attribute as canonical XML.
     ///
     /// The returned string includes the leading space before the attribute
@@ -112,5 +141,34 @@ impl Ord for Attr {
 impl PartialOrd for Attr {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn streaming_namespace_render_matches_allocating_render() {
+        let declaration = NsDecl {
+            prefix: "schema".to_owned(),
+            uri: "urn:test&\"<\t\n\r".to_owned(),
+        };
+        let mut streamed = Vec::new();
+        declaration.write_to(&mut streamed);
+        assert_eq!(streamed, declaration.render().as_bytes());
+    }
+
+    #[test]
+    fn streaming_attribute_render_matches_allocating_render() {
+        let attribute = Attr {
+            ns_uri: "urn:test".to_owned(),
+            local_name: "type".to_owned(),
+            qualified_name: "schema:type".to_owned(),
+            value: "A&B\"<\t\n\r".to_owned(),
+        };
+        let mut streamed = Vec::new();
+        attribute.write_to(&mut streamed);
+        assert_eq!(streamed, attribute.render().as_bytes());
     }
 }

@@ -1035,19 +1035,35 @@ fn reference_node_set_for_fast(
 /// buffer, so this sink avoids allocating a document-sized `Vec<u8>` on the
 /// fast path.
 struct ReferenceDigestSink {
+    /// Stateful digest implementation that receives complete buffered chunks.
     inner: Box<dyn digest::DigestAlgorithm>,
+    /// Canonical bytes waiting for the next digest update.
+    buffer: Vec<u8>,
 }
 
 impl ReferenceDigestSink {
+    /// Batch small C14N writes before crossing the dynamic digest boundary.
+    const BUFFER_CAPACITY: usize = 64 * 1024;
+
     /// Create a digest sink for an XML Security digest algorithm URI.
     fn new(uri: &str) -> Result<Self, Error> {
         Ok(Self {
             inner: digest::from_uri(uri)?,
+            buffer: Vec::with_capacity(Self::BUFFER_CAPACITY),
         })
     }
 
+    /// Feed all currently buffered canonical bytes into the digest.
+    fn flush(&mut self) {
+        if !self.buffer.is_empty() {
+            self.inner.update(&self.buffer);
+            self.buffer.clear();
+        }
+    }
+
     /// Finalize the digest stream and return the computed digest bytes.
-    fn finalize(self) -> Result<Vec<u8>, Error> {
+    fn finalize(mut self) -> Result<Vec<u8>, Error> {
+        self.flush();
         self.inner.finalize()
     }
 }
@@ -1055,7 +1071,29 @@ impl ReferenceDigestSink {
 impl bergshamra_c14n::C14nSink for ReferenceDigestSink {
     /// Feed canonicalized bytes into the underlying digest.
     fn write(&mut self, bytes: &[u8]) {
-        self.inner.update(bytes);
+        // Large chunks cannot benefit from copying through the staging buffer.
+        // Flush earlier bytes first to preserve their canonical order.
+        if bytes.len() >= Self::BUFFER_CAPACITY {
+            self.flush();
+            self.inner.update(bytes);
+            return;
+        }
+
+        // Make room before appending so the buffer never grows beyond its
+        // fixed batching capacity after the initial allocation.
+        if self.buffer.len() + bytes.len() > Self::BUFFER_CAPACITY {
+            self.flush();
+        }
+        self.buffer.extend_from_slice(bytes);
+    }
+
+    /// Buffer punctuation and escaped bytes without a digest update per byte.
+    fn write_byte(&mut self, byte: u8) {
+        // Flush a full buffer before the push so its capacity remains bounded.
+        if self.buffer.len() == Self::BUFFER_CAPACITY {
+            self.flush();
+        }
+        self.buffer.push(byte);
     }
 }
 
@@ -1953,6 +1991,31 @@ fn find_descendant_element_by_local(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_digest_sink_preserves_mixed_write_order() {
+        use bergshamra_c14n::C14nSink;
+
+        let prefix = vec![b'a'; ReferenceDigestSink::BUFFER_CAPACITY - 1];
+        let large = vec![b'c'; ReferenceDigestSink::BUFFER_CAPACITY + 17];
+        let suffix = vec![b'd'; ReferenceDigestSink::BUFFER_CAPACITY];
+        let mut expected_input = prefix.clone();
+        expected_input.push(b'b');
+        expected_input.extend_from_slice(&large);
+        expected_input.extend_from_slice(&suffix);
+        expected_input.push(b'e');
+
+        let mut sink = ReferenceDigestSink::new(algorithm::SHA256).unwrap();
+        sink.write(&prefix);
+        sink.write_byte(b'b');
+        sink.write(&large);
+        sink.write(&suffix);
+        sink.write_byte(b'e');
+
+        let actual = sink.finalize().unwrap();
+        let expected = digest::digest(algorithm::SHA256, &expected_input).unwrap();
+        assert_eq!(actual, expected);
+    }
 
     /// Runtime-owned directory for signing resolver fixtures.
     ///
