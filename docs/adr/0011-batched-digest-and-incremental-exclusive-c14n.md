@@ -1,5 +1,11 @@
 # ADR-0011: Batch Digest Updates and Reuse Exclusive C14N Namespace State
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-09-22
 **Status:** Accepted
 **Context:** Improving XML-DSig throughput for large SAML aggregates and

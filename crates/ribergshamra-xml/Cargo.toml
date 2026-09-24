@@ -1,0 +1,16 @@
+[package]
+name = "ribergshamra-xml"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ribergshamra-xml"
+readme.workspace = true
+rust-version.workspace = true
+description = "XML DOM abstraction for ribergshamra, the maintained fork of the bergshamra XML Security library"
+
+[dependencies]
+ribergshamra-core.workspace = true
+uppsala.workspace = true

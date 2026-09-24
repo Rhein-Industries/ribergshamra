@@ -1,37 +1,41 @@
 [workspace]
 members = [
-    "crates/bergshamra-core",
-    "crates/bergshamra-xml",
-    "crates/bergshamra-c14n",
-    "crates/bergshamra-crypto",
-    "crates/bergshamra-pkcs12",
-    "crates/bergshamra-keys",
-    "crates/bergshamra-transforms",
-    "crates/bergshamra-dsig",
-    "crates/bergshamra-enc",
-    "crates/bergshamra",
+    "crates/ribergshamra-core",
+    "crates/ribergshamra-xml",
+    "crates/ribergshamra-c14n",
+    "crates/ribergshamra-crypto",
+    "crates/ribergshamra-pkcs12",
+    "crates/ribergshamra-keys",
+    "crates/ribergshamra-transforms",
+    "crates/ribergshamra-dsig",
+    "crates/ribergshamra-enc",
+    "crates/ribergshamra",
 ]
 resolver = "2"
 
+# ribergshamra is Rhein Industries' maintained fork of bergshamra by Kushal Das
+# (https://github.com/kushaldas/bergshamra); see README.md and LICENSE.
 [workspace.package]
-version = "0.9.1"
+version = "0.10.0"
 edition = "2021"
+authors = ["Kushal Das (original bergshamra author)", "Rhein Industries"]
 license = "BSD-2-Clause"
-repository = "https://github.com/kushaldas/bergshamra"
+repository = "https://github.com/Rhein-Industries/ribergshamra"
+homepage = "https://github.com/Rhein-Industries/ribergshamra"
 readme = "README.md"
 rust-version = "1.88"
 
 [workspace.dependencies]
 # Internal crates
-bergshamra-core = { version = "0.9.1", path = "crates/bergshamra-core", default-features = false }
-bergshamra-xml = { version = "0.9.1", path = "crates/bergshamra-xml", default-features = false }
-bergshamra-c14n = { version = "0.9.1", path = "crates/bergshamra-c14n", default-features = false }
-bergshamra-crypto = { version = "0.9.1", path = "crates/bergshamra-crypto", default-features = false }
-bergshamra-keys = { version = "0.9.1", path = "crates/bergshamra-keys", default-features = false }
-bergshamra-transforms = { version = "0.9.1", path = "crates/bergshamra-transforms", default-features = false }
-bergshamra-dsig = { version = "0.9.1", path = "crates/bergshamra-dsig", default-features = false }
-bergshamra-enc = { version = "0.9.1", path = "crates/bergshamra-enc", default-features = false }
-bergshamra-pkcs12 = { version = "0.9.1", path = "crates/bergshamra-pkcs12", default-features = false }
+ribergshamra-core = { version = "0.10.0", path = "crates/ribergshamra-core", default-features = false }
+ribergshamra-xml = { version = "0.10.0", path = "crates/ribergshamra-xml", default-features = false }
+ribergshamra-c14n = { version = "0.10.0", path = "crates/ribergshamra-c14n", default-features = false }
+ribergshamra-crypto = { version = "0.10.0", path = "crates/ribergshamra-crypto", default-features = false }
+ribergshamra-keys = { version = "0.10.0", path = "crates/ribergshamra-keys", default-features = false }
+ribergshamra-transforms = { version = "0.10.0", path = "crates/ribergshamra-transforms", default-features = false }
+ribergshamra-dsig = { version = "0.10.0", path = "crates/ribergshamra-dsig", default-features = false }
+ribergshamra-enc = { version = "0.10.0", path = "crates/ribergshamra-enc", default-features = false }
+ribergshamra-pkcs12 = { version = "0.10.0", path = "crates/ribergshamra-pkcs12", default-features = false }
 
 # XML parsing
 uppsala = "0.10"

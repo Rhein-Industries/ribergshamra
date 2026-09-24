@@ -1,7 +1,8 @@
-# Bergshamra Performance
+# ribergshamra performance
 
-This document tracks bergshamra's performance over time, measured with the
-criterion harness in `crates/bergshamra-c14n/benches/c14n.rs`. The harness
+This document tracks ribergshamra's performance over time (entries up to
+0.9.1 were measured on upstream bergshamra), measured with the
+criterion harness in `crates/ribergshamra-c14n/benches/c14n.rs`. The harness
 exercises the hot paths that every XML-DSig / XML-Enc operation hits: XML
 parsing, inclusive/exclusive canonicalization, and entity escaping.
 
@@ -9,13 +10,13 @@ parsing, inclusive/exclusive canonicalization, and entity escaping.
 
 ```bash
 # Run the harness
-cargo bench -p bergshamra-c14n --bench c14n
+cargo bench -p ribergshamra-c14n --bench c14n
 
 # Save a named baseline (e.g. before a change)
-cargo bench -p bergshamra-c14n --bench c14n -- --save-baseline main
+cargo bench -p ribergshamra-c14n --bench c14n -- --save-baseline main
 
 # Compare the current working tree against a saved baseline
-cargo bench -p bergshamra-c14n --bench c14n -- --baseline main
+cargo bench -p ribergshamra-c14n --bench c14n -- --baseline main
 ```
 
 Inputs are generated deterministically in-code (no dependency on the
@@ -85,7 +86,7 @@ Changes measured here:
 3. **Entity escaping** — per-`char` loop that allocated a `String` per node →
    `*_into` variants that append directly to the C14N output `Vec<u8>`, scanned
    adaptively: `memchr3` to bulk-skip clean runs, with a per-byte bail for dense
-   regions and rare-needle inputs (see `crates/bergshamra-c14n/src/escape.rs`).
+   regions and rare-needle inputs (see `crates/ribergshamra-c14n/src/escape.rs`).
 4. **Base64 transform** — `char`-level whitespace strip → byte-level strip.
 
 ### Escaping: thermal-neutral A/B (the trustworthy escape numbers)
@@ -191,7 +192,7 @@ node-set membership, canonicalized output, and often replacement/output XML.
 1. **Whole-document NodeSets are materialized as `HashSet<usize>`.**
    `NodeSet::all`, `all_without_comments`, `tree_without_comments`, and
    `tree_with_comments` insert every visible node into a hash table
-   (`crates/bergshamra-xml/src/nodeset.rs`). The enum already has
+   (`crates/ribergshamra-xml/src/nodeset.rs`). The enum already has
    `Tree`, `TreeWithoutComments`, `TreeInvert`, and `Invert` shapes, but the
    constructors used on hot paths produce `Normal` sets. This is the largest
    avoidable metadata cost for large DOMs.
@@ -199,8 +200,8 @@ node-set membership, canonicalized output, and often replacement/output XML.
 2. **TransformData owns the whole XML string.**
    `TransformData::Xml { xml_text: String, node_set }` means URI resolution and
    transform execution clone the full input for same-document references
-   (`crates/bergshamra-transforms/src/pipeline.rs` and
-   `crates/bergshamra-dsig/src/verify.rs`). On large signed documents this adds
+   (`crates/ribergshamra-transforms/src/pipeline.rs` and
+   `crates/ribergshamra-dsig/src/verify.rs`). On large signed documents this adds
    another input-sized allocation per active reference pipeline.
 
 3. **Verification still uses the generic transform pipeline for the common

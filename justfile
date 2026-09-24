@@ -1,4 +1,4 @@
-# Bergshamra — build, test, and integration test recipes
+# ribergshamra — build, test, and integration test recipes
 _default:
   @just --list
 
@@ -81,7 +81,7 @@ hsm-setup:
 # Run HSM integration tests (requires hsm-setup first)
 test-hsm: build
     SOFTHSM2_CONF={{justfile_directory()}}/hsm-test/softhsm2.local.conf \
-        cargo test -p bergshamra-dsig --test hsm_sign_verify -- --ignored --nocapture --test-threads=1
+        cargo test -p ribergshamra-dsig --test hsm_sign_verify -- --ignored --nocapture --test-threads=1
 
 # Run all tests including HSM
 test-all-with-hsm: test-all test-hsm

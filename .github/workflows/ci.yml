@@ -1,5 +1,14 @@
 name: CI
 
+# Runs format, clippy, unit tests, the xmlsec interop gate, SoftHSM2 and the
+# AWS-LC FIPS build on GitHub-hosted runners only.
+#
+# Publishing to crates.io is manual for now: a Rhein Industries maintainer
+# publishes the ten crates in dependency order from a tagged commit after this
+# workflow passes. bergshamra's tag-triggered Publish workflow was removed in
+# the fork: it used crates.io trusted publishing set up for the bergshamra
+# crates, and ribergshamra has no trusted publisher configured yet.
+
 on:
   push:
     branches: [main]
@@ -67,9 +76,9 @@ jobs:
 
       - name: AWS-LC excludes RustCrypto primitives
         run: |
-          cargo tree --workspace --no-default-features --features aws-lc,legacy-algorithms,pkcs11 -e normal --prefix none > /tmp/bergshamra-aws-tree.txt
+          cargo tree --workspace --no-default-features --features aws-lc,legacy-algorithms,pkcs11 -e normal --prefix none > /tmp/ribergshamra-aws-tree.txt
           forbidden='^(rsa|dsa|ecdsa|p256|p384|p521|ed25519-dalek|x25519-dalek|aes |aes-gcm|cbc |des |sha1 |sha2 |sha3 |hmac |ml-dsa|slh-dsa|ml-kem) v'
-          if rg "$forbidden" /tmp/bergshamra-aws-tree.txt; then
+          if rg "$forbidden" /tmp/ribergshamra-aws-tree.txt; then
             echo "::error::AWS-LC build includes a RustCrypto primitive implementation"
             exit 1
           fi
@@ -141,7 +150,7 @@ jobs:
         run: bash hsm-test/setup.sh
       - name: Exercise token operations with selected document provider
         run: >-
-          cargo test --locked -p bergshamra-dsig --test hsm_sign_verify
+          cargo test --locked -p ribergshamra-dsig --test hsm_sign_verify
           --no-default-features
           --features "${{ matrix.provider }},legacy-algorithms,pkcs11"
           -- --ignored --test-threads=1 --skip test_hsm_ed25519_sign_verify
@@ -169,7 +178,7 @@ jobs:
       - name: Compile document provider in FIPS mode
         run: cargo check --locked --workspace --no-default-features --features fips,pkcs11
       - name: Verify explicit initialization and provider attestation
-        run: cargo test --locked -p bergshamra --no-default-features --features fips,pkcs11 --test fips_attestation
+        run: cargo test --locked -p ribergshamra --no-default-features --features fips,pkcs11 --test fips_attestation
       - name: RustCrypto cannot be combined with FIPS
         run: |
           if cargo check --locked --workspace --no-default-features --features rustcrypto,fips; then

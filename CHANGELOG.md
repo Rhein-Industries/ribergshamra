@@ -1,8 +1,56 @@
 # Changelog
 
-## 0.9.1 [2026-09-22]
+ribergshamra is Rhein Industries' maintained fork of
+[bergshamra](https://github.com/kushaldas/bergshamra) by Kushal Das. Entries
+from 0.10.0 on describe ribergshamra. The history of bergshamra up to 0.9.1,
+the release ribergshamra was forked from, is kept unchanged below.
+
+## 0.10.0 — first ribergshamra release
+
+Not yet published to crates.io. Changes relative to bergshamra 0.9.1
+(upstream tag `v0.9.1`, commit `c9fbaca`):
 
 ### Changed
+
+- **Breaking:** the ten workspace crates are renamed and versioned 0.10.0:
+  `ribergshamra`, `ribergshamra-core`, `ribergshamra-xml`,
+  `ribergshamra-c14n`, `ribergshamra-crypto`, `ribergshamra-pkcs12`,
+  `ribergshamra-keys`, `ribergshamra-transforms`, `ribergshamra-dsig` and
+  `ribergshamra-enc` (`use ribergshamra::...`, `ribergshamra_dsig::...`).
+  Existing code can keep the umbrella crate's paths with
+  `bergshamra = { package = "ribergshamra", version = "0.10" }`.
+- **Breaking:** the CLI binary is `ribergshamra`, the xmlsec shim reads the
+  `RIBERGSHAMRA` variable instead of `BERGSHAMRA`, and `hsm-test/setup.sh`
+  labels the SoftHSM2 token `ribergshamra-test`.
+- **Breaking:** depends on [riptering](https://github.com/Rhein-Industries/riptering)
+  0.6 instead of kryptering 0.5 and on
+  [ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv) 0.5 instead of
+  tsp-ltv 0.4, so errors, keys and provider types come from riptering. The
+  feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
+  and `PqAlgorithm::to_riptering` replace `kryptering_algorithm_uri` and
+  `to_kryptering`.
+- riptering refuses RSA keys below 2048 bits with every provider (kryptering
+  did so only with AWS-LC), so the RustCrypto configuration no longer accepts
+  historical 512- and 1024-bit RSA keys and certificate chains. riptering
+  also adds AES-CBC and AES-KW length checks, a bounded RSA-PSS salt length
+  and PKCS#11 session hardening; see its changelog.
+- XML-DSig/XML-Enc algorithm URIs, XML namespaces, canonicalization and the
+  `test-data/` and `specs/` fixtures are unchanged.
+- Package metadata points at <https://github.com/Rhein-Industries/ribergshamra>;
+  LICENSE keeps Kushal Das's copyright line and adds Rhein Industries' line
+  for the fork's modifications. Added `SECURITY.md` and `CONTRIBUTING.md`.
+- CI runs on GitHub-hosted runners. Upstream's tag-triggered crates.io
+  publish workflow is removed; publishing is manual for now.
+
+## bergshamra history (upstream, up to 0.9.1)
+
+The entries below are bergshamra's own changelog, by Kushal Das and the
+bergshamra contributors, as of the fork point. Headings are demoted one
+level; the text is unchanged.
+
+### 0.9.1 [2026-09-22]
+
+#### Changed
 
 - XML-DSig reference hashing now batches small canonicalization writes before
   updating the digest, avoiding a dynamic digest call for each punctuation or
@@ -14,18 +62,18 @@
 - Updated `cryptoki` to 0.12.1 and `rustls` to 0.23.45 to address
   RUSTSEC-2026-0286 and RUSTSEC-2026-0285.
 
-## 0.9.0 [2026-09-02]
+### 0.9.0 [2026-09-02]
 
-### Changed
+#### Changed
 
 - **Breaking:** workspace crates are version 0.9.0 and use Uppsala 0.10.1.
 - Document-native signing and verification remain Rust APIs within one linked
   dependency graph. Python bindings should cross extension-module boundaries
   using owned serialized XML rather than sharing Uppsala DOM pointers.
 
-## 0.8.0 [2026-07-31]
+### 0.8.0 [2026-07-31]
 
-### Added
+#### Added
 
 - Selectable RustCrypto and AWS-LC document cryptography via Kryptering 0.5,
   with provider identity, initialization, capability, and FIPS status
@@ -35,7 +83,7 @@
 - Provider-wide xmlsec and SoftHSM matrices plus active FIPS document-provider
   attestation on x86_64 and aarch64 CI runners.
 
-### Changed
+#### Changed
 
 - **Breaking:** workspace crates are version 0.8.0 and require Rust 1.88.
 - **Breaking:** signature keys and digest contexts use opaque Kryptering-backed
@@ -55,9 +103,9 @@
   that borrows its input text can sign in place without an `into_static()`
   conversion.
 
-## 0.7.1
+### 0.7.1
 
-### Added
+#### Added
 
 - Added document-native XML-DSig signing APIs: `sign_document()` fills an
   existing signature template in an `uppsala::Document`, while
@@ -67,15 +115,15 @@
   `verify_all_document()`, and `verify_all_document_with_source()` for verifying
   already-parsed Uppsala documents without an unconditional reparse.
 
-### Changed
+#### Changed
 
 - Document-native signing and verification use direct same-document C14N paths
   where supported and serialize lazily only for generic transform fallbacks.
 
 
-## 0.7.0 [2026-07-05]
+### 0.7.0 [2026-07-05]
 
-### Security
+#### Security
 
 - XML Encryption PBKDF2 parameters now enforce a configurable iteration-count cap before invoking PBKDF2. `EncContext` defaults to `DEFAULT_MAX_PBKDF2_ITERATIONS` and exposes `with_max_pbkdf2_iterations()`.
 - API note: this release adds `EncContext::max_pbkdf2_iterations`; downstream code constructing `EncContext { .. }` must set the new field (or switch to `EncContext::new()`/builder methods).
@@ -88,7 +136,7 @@
 - `XmlDocument::build_id_map()` now rejects duplicate ID values across default and caller-registered ID attributes instead of silently overwriting earlier entries.
 - API note: `XmlDocument::build_id_map()` now returns `Result<HashMap<String, NodeId>, Error>`; callers must handle duplicate-ID errors before using the returned map.
 
-### Added
+#### Added
 
 - Added `bergshamra_dsig::sign::sign_owned`, an owned-template signing entry
   point for callers and bindings that construct a template `String` immediately
@@ -99,7 +147,7 @@
   explicit xmlsec compatibility when callers intentionally combine trust
   anchors with raw inline `KeyValue` signatures.
 
-### Changed
+#### Changed
 
 - Updated `uppsala` `0.8.0` → `0.9.0`.
 - Optimized XML-DSig signing for common same-document references whose transform
@@ -111,9 +159,9 @@
   instead of relying only on the first-empty-element fallback.
 
 
-## 0.6.4 [2026-07-03]
+### 0.6.4 [2026-07-03]
 
-### Changed
+#### Changed
 
 - Updated `uppsala` `0.7.1` → `0.8.0`. The parser now enforces the reserved
   namespace-binding rules of Namespaces in XML 1.0 §3 and rejects documents
@@ -125,9 +173,9 @@
   changes; the full xmlsec DSig and Enc integration suites pass unchanged.
 
 
-## 0.6.3 [2026-07-02]
+### 0.6.3 [2026-07-02]
 
-### Changed
+#### Changed
 
 - Updated `uppsala` `0.7.0` → `0.7.1`, a security-hardening release of the XML
   parser: XSD validation now fails closed on unresolved element references,
@@ -137,9 +185,9 @@
   instructions reject markup break-out content. No bergshamra API changes.
 
 
-## 0.6.2 [2026-07-01]
+### 0.6.2 [2026-07-01]
 
-### Security
+#### Security
 
 - Enforce trust-anchor chaining for inline certificates. When the caller has
   configured trust anchors, any key carrying an X.509 chain — including a cert
@@ -157,13 +205,13 @@
   certificate — a key/leaf confusion trust bypass. See
   `docs/adr/0006-x509-leaf-binding.md`.
 
-### Fixed
+#### Fixed
 
 - Signing now emits the full certificate chain from the signing key into
   `<X509Data>` (one `<X509Certificate>` per cert) instead of only the leaf, so a
   verifier configured with just the root anchor can build the path.
 
-### Changed
+#### Changed
 
 - Performance: faster XML canonicalization (C14N) on the common path, plus
   transform-pipeline fixes (base64 whitespace filtering and Unicode-whitespace
@@ -178,9 +226,9 @@
   delegate to `kryptering`). No public API changes.
 
 
-## 0.6.1 [2026-06-29]
+### 0.6.1 [2026-06-29]
 
-### Added
+#### Added
 
 - `bergshamra_dsig::verify::verify_all` (re-exported as `bergshamra::verify_all`)
   — verify **every** `<Signature>` element in a document, returning one
@@ -195,9 +243,9 @@
   `docs/adr/0005-verify-all-signatures.md`.
 
 
-## 0.6.0 [2026-06-27]
+### 0.6.0 [2026-06-27]
 
-### Added
+#### Added
 
 - `VerifyResult::all_reference_digests_verified()` — check whether any
   `<Reference>` digest was skipped, and whether all `<Reference>` digests were
@@ -208,22 +256,22 @@
   when any `<Reference>` digest was not verified locally (e.g. `cid:`
   attachments). Off by default to preserve the existing WS-Security workflow.
 
-### Changed
+#### Changed
 
 - Updated shared dependencies to their latest releases: `kryptering` `0.3.0` →
   `0.4.0`, `tsp-ltv` `0.2.0` → `0.3.0`, and `uppsala` `0.4.0` → `0.5.0`.
 
-## 0.5.1
+### 0.5.1
 
-### Changed
+#### Changed
 
 - Updates `uppsala` to latest 0.4.0 version.
 
-## 0.5.0
+### 0.5.0
 
-### Breaking Changes
+#### Breaking Changes
 
-#### `DsigContext::new()` is now secure-by-default
+##### `DsigContext::new()` is now secure-by-default
 
 `DsigContext::new()` now enables `trusted_keys_only = true`,
 `strict_verification = true`, and `hmac_min_out_len = 160` out of the box,
@@ -232,7 +280,7 @@ previous permissive W3C XML-DSig behavior — inline `<KeyInfo>` keys, no
 reference-position enforcement, no minimum HMAC output length — must switch to
 the new `DsigContext::new_permissive()`.
 
-#### `VerifiedReference` is now `#[non_exhaustive]` and gained `digest_verified`
+##### `VerifiedReference` is now `#[non_exhaustive]` and gained `digest_verified`
 
 The public `VerifiedReference` struct has a new `digest_verified: bool` field
 (`false` for `cid:` WS-Security attachment references whose content lives
@@ -240,14 +288,14 @@ outside the XML document). The struct is now `#[non_exhaustive]`, so downstream
 code must construct it via the verifier and match it with `..`; future fields
 will no longer be a breaking change.
 
-### Added
+#### Added
 
 - `DsigContext::new_permissive()` — opt-in W3C-standard (permissive) context.
 - Verifier-declared HMAC truncation (`HMACOutputLength`, W3C XML-DSig §6.3.1)
   via `SignatureAlgorithm::verify_truncated`, gated by the CVE-2009-0217 policy
   floor (`hmac_min_out_len`).
 
-### Changed
+#### Changed
 
 - Updated `ml-dsa` to `0.1.1`, `slh-dsa` to `0.2.0-rc.5`, and the post-quantum
   `pkcs8` to the stable `0.11.0` (previously prerelease pins), tracking
@@ -261,17 +309,17 @@ will no longer be a breaking change.
   (printing only a key count) to avoid leaking private/secret key material into
   logs and crash reports.
 
-### Fixed
+#### Fixed
 
 - XML-Enc: `<DerivedKey>` (ConcatKDF / PBKDF2) derivation failures now surface
   as errors instead of silently falling through to a `KeyName` lookup that used
   the wrong key bytes (which produced misleading downstream errors).
 
-## 0.4.0
+### 0.4.0
 
-### Breaking Changes
+#### Breaking Changes
 
-#### `DsigContext` and `EncContext` no longer derive `Debug`
+##### `DsigContext` and `EncContext` no longer derive `Debug`
 
 Both context types now contain trait-object fields (`Box<dyn Signer>`, etc.)
 which do not implement `Debug`. Manual `Debug` impls are provided that print
@@ -279,9 +327,9 @@ placeholder strings for HSM fields. Code that relies on `#[derive(Debug)]`
 behavior is unaffected, but generic bounds like `T: Debug` on a type containing
 `DsigContext` may need adjustment.
 
-### Added
+#### Added
 
-#### HSM support via kryptering
+##### HSM support via kryptering
 
 `DsigContext` and `EncContext` now accept optional HSM-backed trait objects for
 signing, verification, encryption, and key wrapping. When set, cryptographic
@@ -313,7 +361,7 @@ let ctx = DsigContext::new(KeysManager::new())
 let signed_xml = sign(&ctx, template_xml)?;
 ```
 
-#### Shared crypto backend (kryptering)
+##### Shared crypto backend (kryptering)
 
 `bergshamra-crypto` now delegates cipher, digest, KDF, key agreement, key
 transport, key wrap, and signing operations to the `kryptering` crate. This
@@ -321,21 +369,21 @@ eliminates code duplication across the e-signing family of crates while
 preserving the same XML algorithm URI–based dispatch API. No behavioral changes
 for existing callers.
 
-#### Shared trust infrastructure (tsp-ltv)
+##### Shared trust infrastructure (tsp-ltv)
 
 X.509 certificate chain validation in `bergshamra-keys` now uses `tsp-ltv`
 for trust store management and chain building. Re-exported as
 `bergshamra_keys::trust` and `bergshamra_keys::tsp_crypto` /
 `bergshamra_keys::tsp_error`.
 
-#### Key introspection methods on `Key`
+##### Key introspection methods on `Key`
 
 - `Key::algorithm_name()` — returns the algorithm name (delegates to `KeyData`)
 - `Key::to_spki_der()` — returns SPKI DER encoding if available
 - `Key::to_key_value_xml()` — returns KeyValue XML fragment if available
 - `Key::has_private_key()` — returns whether the key contains private key material
 
-#### HSM integration tests
+##### HSM integration tests
 
 New `hsm_sign_verify` integration test suite in `bergshamra-dsig` tests signing
 and verification with SoftHSM2 via PKCS#11. Run with:
@@ -345,32 +393,32 @@ just hsm-setup    # Initialize SoftHSM2 token with test keys
 just test-hsm     # Run HSM integration tests
 ```
 
-### Changed
+#### Changed
 
 - Made `load_ed25519_private_pkcs8_der()` and `load_ed25519_public_spki_der()` public in `bergshamra-keys::loader`
 - Made `try_load_pq_private_key()` and `try_load_pq_public_key()` public in `bergshamra-keys::loader`
 - Pinned `ml-dsa` to exact version `=0.1.0-rc.7` to prevent breaking pre-release upgrades
 - Added `kryptering` (shared crypto backend) and `tsp-ltv` (shared trust/validation) as workspace dependencies
 
-## 0.3.1
+### 0.3.1
 
-### Added
+#### Added
 
 - `Key::algorithm_name()` — returns the algorithm name (delegates to `KeyData`)
 - `Key::to_spki_der()` — returns SPKI DER encoding if available
 - `Key::to_key_value_xml()` — returns KeyValue XML fragment if available
 - `Key::has_private_key()` — returns whether the key contains private key material
 
-### Changed
+#### Changed
 
 - Made `load_ed25519_private_pkcs8_der()` and `load_ed25519_public_spki_der()` public in `bergshamra-keys::loader`
 - Made `try_load_pq_private_key()` and `try_load_pq_public_key()` public in `bergshamra-keys::loader`
 
-## 0.3.0
+### 0.3.0
 
-### Breaking Changes
+#### Breaking Changes
 
-#### `VerifyResult::Valid` now carries signing key metadata
+##### `VerifyResult::Valid` now carries signing key metadata
 
 The `Valid` variant has a new required field `key_info: VerifiedKeyInfo`.
 Code that pattern-matches on this variant must be updated:
@@ -408,7 +456,7 @@ match result {
 | `key_name` | `Option<String>` | Key name if resolved from `KeysManager` by name |
 | `x509_chain` | `Vec<Vec<u8>>` | DER-encoded X.509 certificate chain (leaf first) |
 
-#### C14N `inclusive_prefixes` parameter generalized
+##### C14N `inclusive_prefixes` parameter generalized
 
 `canonicalize()`, `canonicalize_doc()`, and `exclusive::canonicalize()` now
 accept `&[S]` where `S: AsRef<str>` instead of `&[String]`. This lets you
@@ -431,9 +479,9 @@ let empty: Vec<&str> = vec![];
 canonicalize(xml, mode, None, &empty)
 ```
 
-### Added
+#### Added
 
-#### Builder methods on context types
+##### Builder methods on context types
 
 `DsigContext` and `EncContext` now support fluent builder-style configuration.
 All fields remain `pub`, so direct assignment still works.
@@ -460,7 +508,7 @@ let ctx = DsigContext::new(keys_manager)
 **`EncContext` builder methods:**
 `with_disable_cipher_reference`
 
-#### Top-level re-exports
+##### Top-level re-exports
 
 The `bergshamra` crate now re-exports the most commonly used types and
 functions at the top level. You no longer need to reach into sub-crate modules:
@@ -486,7 +534,7 @@ use bergshamra::{DsigContext, verify, KeysManager, Error};
 The existing module re-exports (`bergshamra::dsig`, `bergshamra::enc`, etc.)
 are unchanged.
 
-#### New trait implementations
+##### New trait implementations
 
 | Type | Added |
 |------|-------|
@@ -496,7 +544,7 @@ are unchanged.
 | `VerifyResult` | `Clone` (already had `Debug`) |
 | `C14nMode` | `Display` (prints the W3C algorithm URI) |
 
-#### X.509 KeyInfo XML builders
+##### X.509 KeyInfo XML builders
 
 Two new public functions in `bergshamra_keys` for generating `<ds:KeyInfo>`
 fragments containing X.509 certificates:
@@ -509,12 +557,12 @@ let xml = bergshamra_keys::build_x509_key_info(&[cert_b64]);
 let xml = bergshamra_keys::build_x509_key_info_from_der(&[cert_der]);
 ```
 
-### Changed
+#### Changed
 
 - Internal XML generation in `sign.rs`, `verify.rs`, `encrypt.rs`, and
   `keyinfo.rs` migrated from `format!()` string interpolation to Uppsala's
   `XmlWriter` API. No behavioral changes.
 
-## 0.2.1
+### 0.2.1
 
 Initial public release with full XML-DSig, XML-Enc, and C14N support.

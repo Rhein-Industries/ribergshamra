@@ -1,12 +1,18 @@
 # ADR-0004: CLI-side X.509 Trust Anchor Enforcement for Inline KeyInfo Certificates
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-06-06
 **Status:** Accepted
-**Context:** `bergshamra verify` handling of inline `<X509Certificate>` keys when callers also provide `--trusted` CA certificates
+**Context:** `ribergshamra verify` handling of inline `<X509Certificate>` keys when callers also provide `--trusted` CA certificates
 
 ## Problem
 
-The `bergshamra-dsig` library historically treated inline X.509 data and
+The `ribergshamra-dsig` library historically treated inline X.509 data and
 preloaded trust anchors as separate concerns:
 
 - Inline `<KeyInfo><X509Data><X509Certificate>` was accepted for signature
@@ -18,7 +24,7 @@ preloaded trust anchors as separate concerns:
 For the CLI, this created a surprising and unsafe behavior:
 
 ```bash
-bergshamra verify --trusted ca.pem signed.xml
+ribergshamra verify --trusted ca.pem signed.xml
 ```
 
 The caller reasonably expects `ca.pem` to constrain trust for any inline
@@ -48,8 +54,8 @@ Implement trust-anchor enforcement in the CLI layer, not in the DSig library.
 
 Concretely:
 
-1. Keep `bergshamra-dsig` verification semantics unchanged.
-2. In `bergshamra verify`, if the caller supplies `--trusted` and does not
+1. Keep `ribergshamra-dsig` verification semantics unchanged.
+2. In `ribergshamra verify`, if the caller supplies `--trusted` and does not
    also request `--x509-skip-strict-checks`, force the existing inline X.509
    validation path on by setting `ctx.enabled_key_data_x509 = true`.
 3. Expose a real CLI flag `--x509-skip-strict-checks` so xmlsec compatibility
@@ -60,10 +66,10 @@ Concretely:
 This means the CLI becomes safer by default for the common case of:
 
 ```bash
-bergshamra verify --trusted ca.pem signed.xml
+ribergshamra verify --trusted ca.pem signed.xml
 ```
 
-while embedders using `bergshamra-dsig` directly keep control over whether
+while embedders using `ribergshamra-dsig` directly keep control over whether
 inline X.509 trust validation should be enabled.
 
 ## Alternatives Considered
@@ -101,10 +107,10 @@ Accepted.
 
 ### Positive
 
-- `bergshamra verify --trusted ...` now behaves in line with operator
+- `ribergshamra verify --trusted ...` now behaves in line with operator
   expectations: trusted roots constrain inline X.509 verification.
 - The change is scoped to the CLI and does not silently alter the public
-  `bergshamra-dsig` API contract.
+  `ribergshamra-dsig` API contract.
 - xmlsec interop remains stable once `--x509-skip-strict-checks` is forwarded
   correctly.
 
@@ -127,8 +133,8 @@ Accepted.
 
 The CLI-scoped implementation was validated with:
 
-- `cargo test -p bergshamra --bin bergshamra`
-- `cargo test -p bergshamra-dsig --lib`
+- `cargo test -p ribergshamra --bin ribergshamra`
+- `cargo test -p ribergshamra-dsig --lib`
 - `just test-dsig`
 
 Result after the final CLI-only fix:
@@ -139,6 +145,6 @@ Result after the final CLI-only fix:
 
 ## Location
 
-- CLI policy wiring: `crates/bergshamra/src/main.rs`
+- CLI policy wiring: `crates/ribergshamra/src/main.rs`
 - xmlsec compatibility forwarding: `tests/xmlsec1-shim.py`
-- DSig verification path left intentionally unchanged: `crates/bergshamra-dsig/src/verify.rs`
+- DSig verification path left intentionally unchanged: `crates/ribergshamra-dsig/src/verify.rs`

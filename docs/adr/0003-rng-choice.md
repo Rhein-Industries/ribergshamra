@@ -1,5 +1,11 @@
 # ADR 0003 — Choice of CSPRNG for signing paths
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Status:** Accepted
 **Date:** 2026-04-23
 **Deciders:** Kushal Das
@@ -10,12 +16,12 @@
 
 ## Context
 
-`bergshamra-crypto` contains two randomized signing paths:
+`ribergshamra-crypto` contains two randomized signing paths:
 
-1. **ML-DSA** (`crates/bergshamra-crypto/src/sign.rs::pq_ml_dsa_sign`) — calls
+1. **ML-DSA** (`crates/ribergshamra-crypto/src/sign.rs::pq_ml_dsa_sign`) — calls
    `ml_dsa::ExpandedSigningKey::sign_randomized(rng: &mut impl TryCryptoRng)`
    from `ml-dsa 0.1.0-rc.8`, built on **`rand_core 0.10`**.
-2. **RSA-PSS** (`crates/bergshamra-crypto/src/sign.rs::RsaPss::sign`) — calls
+2. **RSA-PSS** (`crates/ribergshamra-crypto/src/sign.rs::RsaPss::sign`) — calls
    `rsa::pss::SigningKey::sign_with_rng(rng: &mut impl CryptoRngCore)` from
    `signature 2.2.0` (via `rsa 0.9`), built on **`rand_core 0.6`**.
 
@@ -75,7 +81,7 @@ Our ranking of RNG properties:
    `TryCryptoRng`: OS RNG exhaustion (seccomp filter blocking
    `getrandom(2)`, chroot without `/dev/urandom`, early-boot entropy
    starvation on embedded platforms) propagates as `Result<_, ml_dsa::Error>`
-   and is converted to `bergshamra_crypto::Error::Crypto` by the
+   and is converted to `ribergshamra_crypto::Error::Crypto` by the
    existing `?` plumbing. Earlier drafts used `UnwrapErr(SysRng)` which
    collapsed RNG errors into a panic; that was rejected because it
    surprises callers running under `catch_unwind`, async runtimes, or

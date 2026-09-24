@@ -1,0 +1,42 @@
+[package]
+name = "ribergshamra"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ribergshamra"
+readme.workspace = true
+rust-version.workspace = true
+description = "Maintained fork of bergshamra: pure Rust XML Security (XML-DSig, XML-Enc, C14N) with selectable cryptographic providers"
+
+[[bin]]
+name = "ribergshamra"
+path = "src/main.rs"
+
+[features]
+default = ["rustcrypto", "legacy-algorithms", "post-quantum", "pkcs11"]
+rustcrypto = ["ribergshamra-crypto/rustcrypto", "ribergshamra-keys/rustcrypto", "ribergshamra-transforms/rustcrypto", "ribergshamra-dsig/rustcrypto", "ribergshamra-enc/rustcrypto", "riptering/rustcrypto"]
+aws-lc = ["ribergshamra-crypto/aws-lc", "ribergshamra-keys/aws-lc", "ribergshamra-transforms/aws-lc", "ribergshamra-dsig/aws-lc", "ribergshamra-enc/aws-lc", "riptering/aws-lc"]
+fips = ["aws-lc", "ribergshamra-crypto/fips", "ribergshamra-keys/fips", "ribergshamra-transforms/fips", "ribergshamra-dsig/fips", "ribergshamra-enc/fips", "riptering/fips"]
+post-quantum = ["ribergshamra-crypto/post-quantum", "ribergshamra-keys/post-quantum", "ribergshamra-transforms/post-quantum", "ribergshamra-dsig/post-quantum", "ribergshamra-enc/post-quantum", "riptering/post-quantum"]
+pkcs11 = ["ribergshamra-crypto/pkcs11", "ribergshamra-keys/pkcs11", "ribergshamra-transforms/pkcs11", "ribergshamra-dsig/pkcs11", "ribergshamra-enc/pkcs11", "riptering/pkcs11"]
+legacy-algorithms = [
+    "ribergshamra-crypto/legacy-algorithms",
+    "ribergshamra-dsig/legacy-algorithms",
+]
+
+[dependencies]
+ribergshamra-core.workspace = true
+ribergshamra-xml.workspace = true
+ribergshamra-c14n.workspace = true
+ribergshamra-crypto.workspace = true
+ribergshamra-keys.workspace = true
+ribergshamra-transforms.workspace = true
+ribergshamra-dsig.workspace = true
+ribergshamra-enc.workspace = true
+clap.workspace = true
+base64.workspace = true
+uppsala.workspace = true
+riptering.workspace = true

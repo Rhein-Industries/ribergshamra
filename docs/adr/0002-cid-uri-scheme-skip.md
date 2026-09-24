@@ -1,5 +1,11 @@
 # ADR-0002: Skip `cid:` URI References in XML-DSig Processing
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-02-22
 **Status:** Accepted
 **Context:** Handling of `cid:` URI scheme references in XML Digital Signature verification and signing
@@ -111,8 +117,8 @@ if uri.starts_with("cid:") {
 ```
 
 Applied in two locations:
-- `crates/bergshamra-dsig/src/verify.rs` — reference verification loop
-- `crates/bergshamra-dsig/src/sign.rs` — reference digest computation loop
+- `crates/ribergshamra-dsig/src/verify.rs` — reference verification loop
+- `crates/ribergshamra-dsig/src/sign.rs` — reference digest computation loop
 
 ## Precedent
 
@@ -143,5 +149,5 @@ Applied in two locations:
 
 ## Location
 
-- Verification: `crates/bergshamra-dsig/src/verify.rs` — `verify()` reference loop
-- Signing: `crates/bergshamra-dsig/src/sign.rs` — `sign()` reference loop
+- Verification: `crates/ribergshamra-dsig/src/verify.rs` — `verify()` reference loop
+- Signing: `crates/ribergshamra-dsig/src/sign.rs` — `sign()` reference loop

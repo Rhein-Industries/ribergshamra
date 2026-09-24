@@ -11,10 +11,10 @@ fi
 dsig_expected='--- TOTAL OK: 447; OK (percent): 99; TOTAL FAILED: 0; TOTAL SKIPPED: 3'
 enc_expected='--- TOTAL OK: 701; OK (percent): 100; TOTAL FAILED: 0; TOTAL SKIPPED: 0'
 
-# XMLSEC compatibility is a contract of Bergshamra's default RustCrypto
+# XMLSEC compatibility is a contract of ribergshamra's default RustCrypto
 # configuration. Alternate providers have focused capability and policy tests.
 cargo build --locked --release
-export BERGSHAMRA="$root/target/release/bergshamra"
+export RIBERGSHAMRA="$root/target/release/ribergshamra"
 
 run_suite() {
     local suite="$1"

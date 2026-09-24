@@ -203,154 +203,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
-name = "bergshamra"
-version = "0.9.1"
-dependencies = [
- "base64",
- "bergshamra-c14n",
- "bergshamra-core",
- "bergshamra-crypto",
- "bergshamra-dsig",
- "bergshamra-enc",
- "bergshamra-keys",
- "bergshamra-transforms",
- "bergshamra-xml",
- "clap",
- "riptering",
- "uppsala",
-]
-
-[[package]]
-name = "bergshamra-c14n"
-version = "0.9.1"
-dependencies = [
- "bergshamra-core",
- "bergshamra-xml",
- "criterion",
- "memchr",
- "uppsala",
-]
-
-[[package]]
-name = "bergshamra-core"
-version = "0.9.1"
-dependencies = [
- "thiserror",
-]
-
-[[package]]
-name = "bergshamra-crypto"
-version = "0.9.1"
-dependencies = [
- "bergshamra-core",
- "hex",
- "rand",
- "riptering",
- "rsa",
- "x25519-dalek",
-]
-
-[[package]]
-name = "bergshamra-dsig"
-version = "0.9.1"
-dependencies = [
- "base64",
- "bergshamra-c14n",
- "bergshamra-core",
- "bergshamra-crypto",
- "bergshamra-keys",
- "bergshamra-transforms",
- "bergshamra-xml",
- "der 0.7.10",
- "riptering",
- "uppsala",
- "x509-cert",
-]
-
-[[package]]
-name = "bergshamra-enc"
-version = "0.9.1"
-dependencies = [
- "base64",
- "bergshamra-c14n",
- "bergshamra-core",
- "bergshamra-crypto",
- "bergshamra-keys",
- "bergshamra-transforms",
- "bergshamra-xml",
- "riptering",
- "uppsala",
-]
-
-[[package]]
-name = "bergshamra-keys"
-version = "0.9.1"
-dependencies = [
- "base64",
- "bergshamra-core",
- "bergshamra-crypto",
- "bergshamra-pkcs12",
- "const-oid 0.10.2",
- "der 0.7.10",
- "dsa",
- "ecdsa",
- "ed25519-dalek",
- "ml-dsa",
- "num-bigint-dig",
- "num-traits",
- "p256",
- "p384",
- "p521",
- "pem-rfc7468",
- "pkcs1",
- "pkcs8 0.10.2",
- "pkcs8 0.11.0",
- "rand",
- "riptering",
- "ritsp-ltv",
- "rsa",
- "signature 2.2.0",
- "slh-dsa",
- "spki 0.7.3",
- "uppsala",
- "x25519-dalek",
- "x509-cert",
- "zeroize",
-]
-
-[[package]]
-name = "bergshamra-pkcs12"
-version = "0.9.1"
-dependencies = [
- "bergshamra-core",
- "cipher 0.5.2",
- "riptering",
- "yasna",
- "zeroize",
-]
-
-[[package]]
-name = "bergshamra-transforms"
-version = "0.9.1"
-dependencies = [
- "base64",
- "bergshamra-c14n",
- "bergshamra-core",
- "bergshamra-crypto",
- "bergshamra-keys",
- "bergshamra-xml",
- "uppsala",
-]
-
-[[package]]
-name = "bergshamra-xml"
-version = "0.9.1"
-dependencies = [
- "bergshamra-core",
- "uppsala",
-]
-
-[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1870,6 +1722,154 @@ checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
 dependencies = [
  "hmac 0.12.1",
  "subtle",
+]
+
+[[package]]
+name = "ribergshamra"
+version = "0.10.0"
+dependencies = [
+ "base64",
+ "clap",
+ "ribergshamra-c14n",
+ "ribergshamra-core",
+ "ribergshamra-crypto",
+ "ribergshamra-dsig",
+ "ribergshamra-enc",
+ "ribergshamra-keys",
+ "ribergshamra-transforms",
+ "ribergshamra-xml",
+ "riptering",
+ "uppsala",
+]
+
+[[package]]
+name = "ribergshamra-c14n"
+version = "0.10.0"
+dependencies = [
+ "criterion",
+ "memchr",
+ "ribergshamra-core",
+ "ribergshamra-xml",
+ "uppsala",
+]
+
+[[package]]
+name = "ribergshamra-core"
+version = "0.10.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
+name = "ribergshamra-crypto"
+version = "0.10.0"
+dependencies = [
+ "hex",
+ "rand",
+ "ribergshamra-core",
+ "riptering",
+ "rsa",
+ "x25519-dalek",
+]
+
+[[package]]
+name = "ribergshamra-dsig"
+version = "0.10.0"
+dependencies = [
+ "base64",
+ "der 0.7.10",
+ "ribergshamra-c14n",
+ "ribergshamra-core",
+ "ribergshamra-crypto",
+ "ribergshamra-keys",
+ "ribergshamra-transforms",
+ "ribergshamra-xml",
+ "riptering",
+ "uppsala",
+ "x509-cert",
+]
+
+[[package]]
+name = "ribergshamra-enc"
+version = "0.10.0"
+dependencies = [
+ "base64",
+ "ribergshamra-c14n",
+ "ribergshamra-core",
+ "ribergshamra-crypto",
+ "ribergshamra-keys",
+ "ribergshamra-transforms",
+ "ribergshamra-xml",
+ "riptering",
+ "uppsala",
+]
+
+[[package]]
+name = "ribergshamra-keys"
+version = "0.10.0"
+dependencies = [
+ "base64",
+ "const-oid 0.10.2",
+ "der 0.7.10",
+ "dsa",
+ "ecdsa",
+ "ed25519-dalek",
+ "ml-dsa",
+ "num-bigint-dig",
+ "num-traits",
+ "p256",
+ "p384",
+ "p521",
+ "pem-rfc7468",
+ "pkcs1",
+ "pkcs8 0.10.2",
+ "pkcs8 0.11.0",
+ "rand",
+ "ribergshamra-core",
+ "ribergshamra-crypto",
+ "ribergshamra-pkcs12",
+ "riptering",
+ "ritsp-ltv",
+ "rsa",
+ "signature 2.2.0",
+ "slh-dsa",
+ "spki 0.7.3",
+ "uppsala",
+ "x25519-dalek",
+ "x509-cert",
+ "zeroize",
+]
+
+[[package]]
+name = "ribergshamra-pkcs12"
+version = "0.10.0"
+dependencies = [
+ "cipher 0.5.2",
+ "ribergshamra-core",
+ "riptering",
+ "yasna",
+ "zeroize",
+]
+
+[[package]]
+name = "ribergshamra-transforms"
+version = "0.10.0"
+dependencies = [
+ "base64",
+ "ribergshamra-c14n",
+ "ribergshamra-core",
+ "ribergshamra-crypto",
+ "ribergshamra-keys",
+ "ribergshamra-xml",
+ "uppsala",
+]
+
+[[package]]
+name = "ribergshamra-xml"
+version = "0.10.0"
+dependencies = [
+ "ribergshamra-core",
+ "uppsala",
 ]
 
 [[package]]

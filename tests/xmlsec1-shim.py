@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-xmlsec1-shim.py — Translates xmlsec1 CLI flags into bergshamra CLI calls.
+xmlsec1-shim.py — Translates xmlsec1 CLI flags into ribergshamra CLI calls.
 
 This allows the xmlsec test scripts (testDSig.sh, testEnc.sh) to drive
-the bergshamra binary via testrun.sh. The shim parses xmlsec1-style
-arguments and invokes bergshamra with the equivalent flags.
+the ribergshamra binary via testrun.sh. The shim parses xmlsec1-style
+arguments and invokes ribergshamra with the equivalent flags.
 
 Usage (from the xmlsec test runner):
     bash tests/testrun.sh tests/testDSig.sh openssl tests \
-        /path/to/bergshamra/tests/xmlsec1-shim.py pem
+        /path/to/ribergshamra/tests/xmlsec1-shim.py pem
 
 Or directly:
     ./xmlsec1-shim.py --verify --hmackey keys/hmackey.bin file.xml
@@ -20,9 +20,9 @@ import os
 import subprocess
 import sys
 
-BERGSHAMRA = os.environ.get(
-    "BERGSHAMRA",
-    os.path.join(os.path.dirname(__file__), "..", "target", "release", "bergshamra"),
+RIBERGSHAMRA = os.environ.get(
+    "RIBERGSHAMRA",
+    os.path.join(os.path.dirname(__file__), "..", "target", "release", "ribergshamra"),
 )
 
 
@@ -82,10 +82,10 @@ def parse_xmlsec1_args(args):
         elif arg in ("--encrypt", "encrypt"):
             ctx["command"] = "encrypt"
         elif arg == "version":
-            print("bergshamra-shim 0.1.0 (bergshamra)")
+            print("ribergshamra-shim 0.1.0 (ribergshamra)")
             sys.exit(0)
         elif arg in ("--help", "--help-all") or arg.startswith("--help-"):
-            print("xmlsec1-shim: use bergshamra --help")
+            print("xmlsec1-shim: use ribergshamra --help")
             sys.exit(0)
         elif arg == "check-transforms" or arg == "check-key-data":
             # The test runner calls these to check if features are supported.
@@ -226,7 +226,7 @@ def parse_xmlsec1_args(args):
         elif arg == "--pkcs12-persist":
             pass  # silently ignore
         elif arg == "--enable-asn1-signatures-hack":
-            # Bergshamra detects XMLDSig raw ECDSA values and ASN.1 DER values
+            # ribergshamra detects XMLDSig raw ECDSA values and ASN.1 DER values
             # without a compatibility switch, so this xmlsec1 flag is an
             # explicit, semantics-preserving no-op.
             pass
@@ -275,7 +275,7 @@ def _abs(path):
     testrun.sh does `cd $topfolder/$folder` before calling the shim, but some
     paths (e.g. tests/keys/hmackey.bin) are relative to an ancestor directory,
     not the test subdirectory.  When the CWD-based resolution doesn't exist,
-    walk up from CWD through parent directories, then try the bergshamra
+    walk up from CWD through parent directories, then try the ribergshamra
     project root.
     """
     resolved = os.path.abspath(path)
@@ -300,9 +300,9 @@ def _abs(path):
     return resolved
 
 
-def build_bergshamra_cmd(ctx):
-    """Convert parsed context into a bergshamra command list."""
-    cmd = [BERGSHAMRA]
+def build_ribergshamra_cmd(ctx):
+    """Convert parsed context into a ribergshamra command list."""
+    cmd = [RIBERGSHAMRA]
 
     if not ctx["command"]:
         print("xmlsec1-shim: no command specified", file=sys.stderr)
@@ -466,7 +466,7 @@ def main():
         flags = " ".join(ctx["skipped_flags"])
         print(f"xmlsec1-shim: unsupported xmlsec1 flags: {flags}", file=sys.stderr)
         sys.exit(2)
-    cmd = build_bergshamra_cmd(ctx)
+    cmd = build_ribergshamra_cmd(ctx)
 
     if cmd is None:
         sys.exit(1)
@@ -476,16 +476,16 @@ def main():
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True)
-        # Print bergshamra output
+        # Print ribergshamra output
         if result.stdout:
             sys.stdout.write(result.stdout)
         if result.stderr:
             sys.stderr.write(result.stderr)
         sys.exit(result.returncode)
     except FileNotFoundError:
-        print(f"xmlsec1-shim: bergshamra not found at {BERGSHAMRA}", file=sys.stderr)
+        print(f"xmlsec1-shim: ribergshamra not found at {RIBERGSHAMRA}", file=sys.stderr)
         print(
-            "Set BERGSHAMRA env var or build with: cargo build --release",
+            "Set RIBERGSHAMRA env var or build with: cargo build --release",
             file=sys.stderr,
         )
         sys.exit(1)

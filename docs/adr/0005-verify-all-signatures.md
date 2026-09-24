@@ -1,12 +1,18 @@
 # ADR-0005: Verify Every `<Signature>` in a Document with `verify_all`
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-06-29
 **Status:** Accepted
 **Context:** Verifying documents that carry more than one XML-DSig signature, in particular SAML Responses signed at both the Response and the Assertion level
 
 ## Problem
 
-`bergshamra_dsig::verify::verify()` finds the **first** `<Signature>` element
+`ribergshamra_dsig::verify::verify()` finds the **first** `<Signature>` element
 in document order, verifies it, and returns a single `VerifyResult`. This is
 correct for the common case of a singly-signed document, but it cannot serve a
 caller that needs to confirm a *specific* object is covered by a valid
@@ -146,7 +152,7 @@ pub fn verify_all(ctx: &DsigContext, xml: &str) -> Result<Vec<VerifyResult>, Err
   the existing `find_element`.
 - `build_verify_id_map` factors out the id-attribute seeding shared by both
   entry points.
-- Re-exported as `bergshamra::verify_all` from the umbrella crate.
+- Re-exported as `ribergshamra::verify_all` from the umbrella crate.
 
 Each signature is verified independently against the same parsed document.
 This is sound for enveloped signatures: verifying the Response signature
@@ -172,6 +178,6 @@ canonicalizes the Assertion subtree (removing only the Assertion's
 
 ## Location
 
-- `crates/bergshamra-dsig/src/verify.rs` — `verify_all`,
+- `crates/ribergshamra-dsig/src/verify.rs` — `verify_all`,
   `verify_signature_node`, `build_verify_id_map`, `find_all_elements`
-- `crates/bergshamra/src/lib.rs` — `pub use ... verify_all`
+- `crates/ribergshamra/src/lib.rs` — `pub use ... verify_all`

@@ -1,0 +1,26 @@
+[package]
+name = "ribergshamra-pkcs12"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ribergshamra-pkcs12"
+readme.workspace = true
+rust-version.workspace = true
+description = "PKCS#12 parser for ribergshamra, the maintained fork of the bergshamra XML Security library"
+
+[features]
+default = ["rustcrypto", "legacy-algorithms"]
+rustcrypto = ["riptering/rustcrypto"]
+aws-lc = ["riptering/aws-lc"]
+fips = ["aws-lc", "riptering/fips"]
+legacy-algorithms = ["riptering/legacy"]
+
+[dependencies]
+ribergshamra-core.workspace = true
+riptering.workspace = true
+zeroize.workspace = true
+yasna.workspace = true
+cipher = { version = "0.5", features = ["block-padding", "alloc"] }

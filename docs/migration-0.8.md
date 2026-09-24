@@ -1,5 +1,11 @@
 # Migrating to Bergshamra 0.8.0
 
+> **Note (ribergshamra fork):** this guide is a historical record from
+> bergshamra 0.8.0 and is kept unchanged. With ribergshamra, depend on the
+> `ribergshamra` crates (`use ribergshamra::...`, `ribergshamra_*`) instead of
+> `bergshamra`, and read Kryptering / tsp-ltv as riptering / ritsp-ltv; see
+> the [changelog](../CHANGELOG.md) for what changed in 0.10.0.
+
 Bergshamra 0.8.0 was released on July 31, 2026. It is a coordinated breaking
 release with Kryptering 0.5 and tsp-ltv 0.4. The minimum Rust version is 1.88.
 

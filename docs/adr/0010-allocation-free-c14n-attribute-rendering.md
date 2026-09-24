@@ -1,5 +1,11 @@
 # ADR-0010: Allocation-Free C14N Attribute and Namespace Rendering
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-07-10
 **Status:** Proposed
 **Context:** Investigating per-element allocation in C14N attribute and

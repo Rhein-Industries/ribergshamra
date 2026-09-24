@@ -1,0 +1,40 @@
+[package]
+name = "ribergshamra-dsig"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ribergshamra-dsig"
+readme.workspace = true
+rust-version.workspace = true
+description = "XML Digital Signatures for ribergshamra, the maintained fork of the bergshamra XML Security library"
+
+[features]
+default = ["rustcrypto", "legacy-algorithms", "post-quantum", "pkcs11"]
+rustcrypto = ["ribergshamra-crypto/rustcrypto", "ribergshamra-keys/rustcrypto", "ribergshamra-transforms/rustcrypto", "riptering/rustcrypto"]
+aws-lc = ["ribergshamra-crypto/aws-lc", "ribergshamra-keys/aws-lc", "ribergshamra-transforms/aws-lc", "riptering/aws-lc"]
+fips = ["aws-lc", "ribergshamra-crypto/fips", "ribergshamra-keys/fips", "ribergshamra-transforms/fips", "riptering/fips"]
+post-quantum = ["ribergshamra-crypto/post-quantum", "ribergshamra-keys/post-quantum", "ribergshamra-transforms/post-quantum", "riptering/post-quantum"]
+pkcs11 = ["ribergshamra-crypto/pkcs11", "ribergshamra-keys/pkcs11", "ribergshamra-transforms/pkcs11", "riptering/pkcs11"]
+# Propagate legacy-algorithm support to the X.509 cert-chain validation path.
+legacy-algorithms = ["ribergshamra-crypto/legacy-algorithms", "ribergshamra-keys/legacy-algorithms", "ribergshamra-transforms/legacy-algorithms", "riptering/legacy"]
+
+[dependencies]
+ribergshamra-core.workspace = true
+ribergshamra-xml.workspace = true
+ribergshamra-transforms.workspace = true
+ribergshamra-keys.workspace = true
+ribergshamra-c14n.workspace = true
+ribergshamra-crypto.workspace = true
+riptering.workspace = true
+base64.workspace = true
+uppsala.workspace = true
+x509-cert.workspace = true
+der.workspace = true
+
+[dev-dependencies]
+ribergshamra-c14n.workspace = true
+ribergshamra-xml.workspace = true
+uppsala.workspace = true

@@ -1,6 +1,6 @@
 # Provider-specific expected unsupported cases
 
-The XMLSEC compatibility gate runs only against Bergshamra's default
+The XMLSEC compatibility gate runs only against ribergshamra's default
 RustCrypto configuration and requires the full established pass totals.
 Alternate-provider limits listed here are covered by focused capability and
 policy tests; they are not accepted as XMLSEC test failures.
@@ -22,5 +22,5 @@ policy tests; they are not accepted as XMLSEC test failures.
 
 This manifest describes interoperability limits, not recommended security
 policy. Applications should normally reject legacy SHA-1 chains as well;
-Bergshamra enables them only with `legacy-algorithms`. FIPS builds use focused
+ribergshamra enables them only with `legacy-algorithms`. FIPS builds use focused
 provider tests and do not run the XMLSEC compatibility suite.

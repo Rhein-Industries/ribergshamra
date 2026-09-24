@@ -1,5 +1,11 @@
 # ADR-0001: DH-ES Key Agreement Security Checks
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-02-22
 **Status:** Accepted
 **Context:** Implementation of finite-field Diffie-Hellman Ephemeral-Static (DH-ES) key agreement per W3C XML Encryption 1.1 (`xmlenc11#dh-es`)
@@ -84,5 +90,5 @@ by also verifying primality of p and q, and the structural relationship
 
 ## Location
 
-- Parameter validation: `crates/bergshamra-keys/src/loader.rs` → `validate_dh_params()`
-- Peer key validation: `crates/bergshamra-crypto/src/keyagreement.rs` → `dh_compute()`
+- Parameter validation: `crates/ribergshamra-keys/src/loader.rs` → `validate_dh_params()`
+- Peer key validation: `crates/ribergshamra-crypto/src/keyagreement.rs` → `dh_compute()`

@@ -1,0 +1,25 @@
+[package]
+name = "ribergshamra-c14n"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/ribergshamra-c14n"
+readme.workspace = true
+rust-version.workspace = true
+description = "XML Canonicalization (C14N) for ribergshamra, the maintained fork of the bergshamra XML Security library"
+
+[dependencies]
+ribergshamra-core.workspace = true
+ribergshamra-xml.workspace = true
+uppsala.workspace = true
+memchr.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "c14n"
+harness = false

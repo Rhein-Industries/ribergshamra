@@ -1,12 +1,65 @@
-# Bergshamra
+# ribergshamra
+
+> **Fork notice.** ribergshamra is Rhein Industries' actively maintained fork
+> of [bergshamra](https://github.com/kushaldas/bergshamra) by Kushal Das. It
+> starts from bergshamra 0.9.1 (upstream tag `v0.9.1`, commit `c9fbaca`) and
+> keeps bergshamra's BSD-2-Clause license and copyright notice. ribergshamra
+> is **not affiliated with or endorsed by** the upstream author: please report
+> problems with ribergshamra to Rhein Industries, not to the bergshamra
+> project.
+>
+> - Bugs and feature requests:
+>   <https://github.com/Rhein-Industries/ribergshamra/issues>
+> - Security problems: report them privately as described in
+>   [SECURITY.md](SECURITY.md); do not open a public issue.
 
 XML Security library implementing the W3C XML Digital Signatures
 (XML-DSig), XML Encryption (XML-Enc), and XML Canonicalization (C14N)
 specifications. Document cryptography is selectable between RustCrypto and
 AWS-LC through [riptering](https://github.com/Rhein-Industries/riptering);
-XML parsing uses
-[Uppsala](https://crates.io/crates/uppsala). Version 0.10.1 was released on
-August 02, 2026, and requires Rust 1.88.
+trust stores and certificate-chain validation come from
+[ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv); XML parsing uses
+[Uppsala](https://crates.io/crates/uppsala). ribergshamra 0.10.0 requires
+Rust 1.88.
+
+## How ribergshamra differs from bergshamra 0.9.1
+
+- **Names.** The ten crates are renamed `ribergshamra`, `ribergshamra-core`,
+  `-xml`, `-c14n`, `-crypto`, `-pkcs12`, `-keys`, `-transforms`, `-dsig` and
+  `-enc` (`use ribergshamra::...`, `ribergshamra_dsig::...`). The CLI binary
+  is `ribergshamra`, the xmlsec shim reads `RIBERGSHAMRA` instead of
+  `BERGSHAMRA`, and the SoftHSM2 test token is labelled `ribergshamra-test`.
+  XML-DSig/XML-Enc algorithm URIs, namespaces and canonicalization are
+  unchanged.
+- **Dependencies.** [riptering](https://github.com/Rhein-Industries/riptering)
+  0.6 replaces kryptering 0.5 and
+  [ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv) 0.5 replaces
+  tsp-ltv 0.4, so errors, keys and provider types come from riptering. The
+  feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
+  and `PqAlgorithm::to_riptering` replace their `kryptering` names.
+- **RSA key size.** riptering refuses RSA keys below 2048 bits with every
+  provider (kryptering did so only with AWS-LC), so the RustCrypto
+  configuration no longer accepts historical 512- and 1024-bit RSA keys and
+  certificate chains.
+- **Project.** Package metadata points at
+  <https://github.com/Rhein-Industries/ribergshamra>; CI runs on
+  GitHub-hosted runners and publishing is manual for now.
+
+The full list is in the [changelog](CHANGELOG.md).
+
+### Migrating from bergshamra
+
+```toml
+[dependencies]
+ribergshamra = "0.10"
+# or keep the `bergshamra::` paths in your code:
+# bergshamra = { package = "ribergshamra", version = "0.10" }
+```
+
+With the plain `ribergshamra` dependency, replace `bergshamra::` with
+`ribergshamra::` (and `bergshamra_*::` with `ribergshamra_*::` for the member
+crates) in your code, and `kryptering::` with `riptering::` where you use the
+crypto backend directly.
 
 ## Features
 
@@ -27,7 +80,7 @@ August 02, 2026, and requires Rust 1.88.
 - **OPC Relationship Transform** — for Office Open XML signatures (ECMA-376 Part 2)
 - **Key formats** — PEM, DER, PKCS#8 (plain and encrypted), PKCS#12, X.509 (PEM and DER), xmlsec keys.xml, raw symmetric keys
 - **KeyInfo resolution** — KeyName, X509Certificate (multi-cert chain with leaf detection), X509IssuerSerial, RSA/EC/DSA KeyValue, DEREncodedKeyValue, RetrievalMethod, EncryptedKey, KeyInfoReference
-- **`#![forbid(unsafe_code)]`** in each Bergshamra workspace crate; dependencies may use unsafe Rust
+- **`#![forbid(unsafe_code)]`** in each ribergshamra workspace crate; dependencies may use unsafe Rust
 
 ### Supported algorithms
 
@@ -73,10 +126,14 @@ x86_64/aarch64.
 
 ## xmlsec test suite compatibility
 
-Bergshamra's default RustCrypto configuration is tested against the full
+ribergshamra's default RustCrypto configuration is tested against the full
 [xmlsec](https://www.aleksey.com/xmlsec/) interoperability test suite. These
 are the same tests used by the xmlsec1 C library, covering test vectors from
 the W3C, Merlin, Aleksey, IAIK, NIST, and Phaos interop suites.
+
+The totals below are bergshamra 0.9.1's (on kryptering 0.5). Fixtures that
+use RSA keys or CA certificates below 2048 bits are affected by riptering's
+2048-bit RSA minimum (see above).
 
 | Suite | Passed | Failed | Skipped |
 |-------|--------|--------|---------|
@@ -91,24 +148,25 @@ outside riptering's algorithm contract. Alternate providers use focused
 capability and policy tests rather than this XMLSEC compatibility gate.
 
 A Python shim (`tests/xmlsec1-shim.py`) translates xmlsec1 CLI flags to
-bergshamra flags, so the unmodified xmlsec test scripts run directly against
-bergshamra.
+ribergshamra flags, so the unmodified xmlsec test scripts run directly against
+ribergshamra.
 
 ## Workspace crates
 
 | Crate | Purpose |
 |-------|---------|
-| `bergshamra-core` | Error types, algorithm URIs, XML namespace/element constants |
-| `bergshamra-xml` | DOM abstraction over Uppsala, NodeSet, XPath, XML writer |
-| `bergshamra-c14n` | All 6 W3C C14N variants with document-subset filtering |
-| `bergshamra-crypto` | Digest, signature, cipher, key wrap, key transport operations |
-| `bergshamra-keys` | Key loading (PEM/DER/PKCS#8/PKCS#12), KeysManager, KeyInfo resolution |
-| `bergshamra-transforms` | Transform pipeline (base64, enveloped, XPath, XSLT, URI handling) |
-| `bergshamra-dsig` | XML Digital Signature verification and creation |
-| `bergshamra-enc` | XML Encryption and decryption |
-| `bergshamra` | CLI binary and re-exports |
+| `ribergshamra-core` | Error types, algorithm URIs, XML namespace/element constants |
+| `ribergshamra-xml` | DOM abstraction over Uppsala, NodeSet, XPath, XML writer |
+| `ribergshamra-c14n` | All 6 W3C C14N variants with document-subset filtering |
+| `ribergshamra-crypto` | Digest, signature, cipher, key wrap, key transport operations |
+| `ribergshamra-pkcs12` | PKCS#12 parsing (KDF, MAC and PBE through the selected provider) |
+| `ribergshamra-keys` | Key loading (PEM/DER/PKCS#8/PKCS#12), KeysManager, KeyInfo resolution |
+| `ribergshamra-transforms` | Transform pipeline (base64, enveloped, XPath, XSLT, URI handling) |
+| `ribergshamra-dsig` | XML Digital Signature verification and creation |
+| `ribergshamra-enc` | XML Encryption and decryption |
+| `ribergshamra` | CLI binary and re-exports |
 
-Dependency flow: `core → xml → c14n → crypto → keys → transforms → dsig/enc → bergshamra`
+Dependency flow: `core → xml → c14n → crypto → pkcs12 → keys → transforms → dsig/enc → ribergshamra`
 
 ## Build & test
 
@@ -123,7 +181,7 @@ cargo fmt --all -- --check     # Check formatting
 ### Integration tests (xmlsec test suite)
 
 ```bash
-cd /path/to/bergshamra
+cd /path/to/ribergshamra
 
 # Enc tests
 bash test-data/testrun.sh test-data/testEnc.sh openssl \
@@ -138,16 +196,16 @@ bash test-data/testrun.sh test-data/testDSig.sh openssl \
 
 ```bash
 # Verify a signed document
-bergshamra verify --trusted ca.pem signed.xml
+ribergshamra verify --trusted ca.pem signed.xml
 
 # Sign a template
-bergshamra sign -k private.pem --output signed.xml template.xml
+ribergshamra sign -k private.pem --output signed.xml template.xml
 
 # Decrypt
-bergshamra decrypt -k private.pem encrypted.xml
+ribergshamra decrypt -k private.pem encrypted.xml
 
 # Encrypt
-bergshamra encrypt --cert recipient.pem --output encrypted.xml template.xml data.xml
+ribergshamra encrypt --cert recipient.pem --output encrypted.xml template.xml data.xml
 ```
 
 Key loading options: `-k` (auto-detect PEM/DER), `-K NAME:FILE` (named key),
@@ -157,27 +215,27 @@ Key loading options: `-k` (auto-detect PEM/DER), `-K NAME:FILE` (named key),
 ## Library usage
 
 ```rust
-let signed = bergshamra::sign(&ctx, template_xml)?;
-let signed = bergshamra::dsig::sign::sign_owned(&ctx, template_xml_string)?;
+let signed = ribergshamra::sign(&ctx, template_xml)?;
+let signed = ribergshamra::dsig::sign::sign_owned(&ctx, template_xml_string)?;
 ```
 
 Use `sign_owned` when the caller already owns a generated template `String` and
 wants to avoid the initial clone that the borrowed `sign` convenience wrapper
 performs.
 
-The 0.8.0 key, digest, and client changes are summarized in the
-[migration guide](docs/migration-0.8.md).
+The 0.8.0 key, digest, and client changes are summarized in bergshamra's
+[migration guide](docs/migration-0.8.md) (historical).
 
 ## Security hardening
 
-XML Digital Signatures are a frequent target of attack. Bergshamra provides
+XML Digital Signatures are a frequent target of attack. ribergshamra provides
 several layered protections — some always-on, some opt-in.
 
 ### Duplicate ID rejection (always on)
 
 XML Signature Wrapping (XSW) attacks often rely on injecting a second element
 with the same `Id` attribute so that the signature verifies against one element
-while the application processes another. Bergshamra unconditionally rejects
+while the application processes another. ribergshamra unconditionally rejects
 documents that contain duplicate ID values across any registered ID attribute
 (`Id`, `ID`, `id`, `AssertionID`, `xml:id`, and any names added via
 `DsigContext::add_id_attr`). Both `verify` and `sign` return an error if a
@@ -199,7 +257,7 @@ A successful verification returns `VerifyResult::Valid` which carries:
 
 When `digest_verified` is `false`, the reference is currently a `cid:`
 attachment reference: its URI, transforms, and declared digest are still
-integrity-protected by the signed `<SignedInfo>`, but Bergshamra did not hash
+integrity-protected by the signed `<SignedInfo>`, but ribergshamra did not hash
 the external attachment bytes. When local digest coverage is explicitly disabled
 for detached-content workflows, use
 `VerifyResult::all_reference_digests_verified()` or
@@ -214,7 +272,7 @@ profiles that verify attachment bytes out-of-band can opt out with
 `DsigContext::with_require_reference_digests(false)` or the CLI flag
 `--allow-missing-reference-digests`.
 
-Detached bytes that Bergshamra should hash locally must be mapped explicitly
+Detached bytes that ribergshamra should hash locally must be mapped explicitly
 with `DsigContext::add_url_map("URI", "file")` or CLI `--url-map URI=FILE`.
 Mappings match the URI exactly, or the same URI with a `#fragment` suffix.
 For XML-DSig compatibility, simple relative local file references are also
@@ -251,7 +309,7 @@ XML can embed their own key and sign with it — the signature will verify, but
 against the wrong key. This is essential for SAML Service Providers and any
 deployment where the signing key is known ahead of time.
 
-When trust anchors are configured, Bergshamra rejects raw inline `<KeyValue>`
+When trust anchors are configured, ribergshamra rejects raw inline `<KeyValue>`
 and `<DEREncodedKeyValue>` keys because they have no certificate chain to
 validate. Inline `<X509Data>` remains supported, but the certificate chain must
 validate to a configured anchor.
@@ -273,9 +331,9 @@ in bits. A zero-length or very short HMAC is trivially forgeable.
 ### XML Encryption PBKDF2 iteration limit
 
 XML Encryption documents can carry `<xenc11:IterationCount>` inside PBKDF2
-key-derivation parameters. Bergshamra caps that XML-controlled work factor
+key-derivation parameters. ribergshamra caps that XML-controlled work factor
 before invoking PBKDF2. `EncContext::new()` uses
-`bergshamra_enc::context::DEFAULT_MAX_PBKDF2_ITERATIONS`; set
+`ribergshamra_enc::context::DEFAULT_MAX_PBKDF2_ITERATIONS`; set
 `EncContext::max_pbkdf2_iterations` or use
 `EncContext::with_max_pbkdf2_iterations()` when a deployment needs a lower or
 higher CPU budget. A value of `0` rejects XML Encryption PBKDF2 usage.
@@ -292,14 +350,15 @@ ctx.verify_keys = true;           // validate the IdP certificate chain
 Or on the CLI:
 
 ```bash
-bergshamra verify --strict --trusted-keys-only --trusted idp-ca.pem signed-assertion.xml
+ribergshamra verify --strict --trusted-keys-only --trusted idp-ca.pem signed-assertion.xml
 ```
 
 ## Security examples
 
 The [secexample](https://github.com/kushaldas/secexample) repository
 contains runnable demonstrations of three XML signature attacks and how
-bergshamra detects and rejects each one:
+upstream bergshamra detects and rejects each one (ribergshamra keeps the same
+defences):
 
 1. **XML Signature Wrapping (XSW)** — relocates signed content to fool the application
 2. **Key Injection** — attacker signs with their own key embedded in `<KeyInfo>`
@@ -310,4 +369,6 @@ verifier using the defences described above.
 
 ## License
 
-BSD-2-Clause License. See [LICENSE](LICENSE) for details.
+BSD-2-Clause, see [LICENSE](LICENSE). ribergshamra retains bergshamra's
+copyright notice (Copyright (c) 2026, Kushal Das) and adds Rhein Industries'
+notice for the fork's modifications.

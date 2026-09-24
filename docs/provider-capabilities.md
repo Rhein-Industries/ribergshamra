@@ -1,15 +1,15 @@
 # Provider capabilities
 
-Bergshamra routes document cryptography through riptering 0.6, Rhein
-Industries' maintained fork of Kryptering 0.5 (the provider since 0.8.0). This
-table is the expected-support manifest for the provider matrix; tests must
-either exercise a row or assert the corresponding deterministic unsupported
-error.
+ribergshamra routes document cryptography through riptering 0.6, Rhein
+Industries' maintained fork of Kryptering 0.5 (the provider since bergshamra
+0.8.0). This table is the expected-support manifest for the provider matrix;
+tests must either exercise a row or assert the corresponding deterministic
+unsupported error.
 
 | Operation | RustCrypto | AWS-LC |
 |---|---|---|
 | SHA-2 and HMAC-SHA-2 | supported | supported |
-| RSA PKCS#1/PSS | full existing Bergshamra mappings | stable SHA-2 mappings |
+| RSA PKCS#1/PSS | full existing ribergshamra mappings | stable SHA-2 mappings |
 | ECDSA / Ed25519 | full existing mappings | stable AWS-LC mappings |
 | AES-CBC/GCM | 128/192/256 | 128/192/256 |
 | AES-KW | 128/192/256 | 128/256; 192 is expected-unsupported |

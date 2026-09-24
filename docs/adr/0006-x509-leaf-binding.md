@@ -1,5 +1,11 @@
 # ADR-0006: Bind the validated X.509 leaf to the signature-verification key
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-07-01
 **Status:** Accepted
 **Context:** Trust-anchor enforcement for certificates carried inline in
@@ -13,14 +19,14 @@ When a signed document carries its signer certificate(s) inline in
 `<ds:X509Data>`, bergshamra does two independent things:
 
 1. **Signature verification** uses a public key. For an inline X.509 key,
-   `extract_x509_certificate` (`bergshamra-keys/src/keyinfo.rs`) picks the
+   `extract_x509_certificate` (`ribergshamra-keys/src/keyinfo.rs`) picks the
    end-entity certificate with `find_leaf_cert()` and loads *its* public key
    into `Key::data`. `find_leaf_cert` is a heuristic (BasicConstraints +
    issuer/subject graph) and, when several end-entity certificates are present,
    returns `*candidates.last()` — i.e. **not necessarily the first certificate
    in document order**.
 
-2. **Trust-chain validation** (`bergshamra-dsig/src/verify.rs`, added in
+2. **Trust-chain validation** (`ribergshamra-dsig/src/verify.rs`, added in
    ADR-0004's spirit and extended to fire whenever trust anchors are
    configured) validates `key.x509_chain[0]` against the anchor pool via
    `validate_cert_chain`.
@@ -128,7 +134,7 @@ which ignores inline key material and only trusts pre-configured keys.
 
 ## Testing
 
-- `bergshamra-keys` unit tests
+- `ribergshamra-keys` unit tests
   (`keyinfo::tests::test_x509data_places_selected_leaf_first`,
   `test_x509data_single_cert_is_leaf`): with the end-entity leaf placed
   **second** in an adversarially ordered `<X509Data>`, `x509_chain[0]` is the

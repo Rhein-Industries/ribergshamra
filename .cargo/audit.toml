@@ -1,7 +1,7 @@
 # cargo-audit allow-list.
 #
 # Each entry documents *why* the advisory is ignored, what the upstream
-# fix looks like, and who has to move for bergshamra to drop the entry.
+# fix looks like, and who has to move for ribergshamra to drop the entry.
 # This file started as a mirror of kryptering's .cargo/audit.toml (now
 # riptering's, Rhein Industries' maintained fork of kryptering) — we carry
 # ignores for the same transitive crates (rsa 0.9, rand 0.8 via
@@ -12,7 +12,7 @@ ignore = [
     # RUSTSEC-2023-0071 — rsa 0.9.x "Marvin Attack" timing sidechannel.
     # Severity 5.9 (medium). No fixed upgrade is available in the 0.9.x
     # line; RustCrypto's rewrite lands in rsa 0.10, which is not yet
-    # released. Bergshamra's threat model for XML-DSig / XML-Enc users
+    # released. ribergshamra's threat model for XML-DSig / XML-Enc users
     # who need timing-side-channel resistance should route RSA private
     # operations through an HSM via riptering::pkcs11 rather than
     # relying on the software path.
@@ -23,7 +23,7 @@ ignore = [
     # rand::rng()". Pulled in transitively via num-bigint-dig (which rsa
     # 0.9 and dsa 0.6 use) and also directly. The unsound pattern
     # requires a caller to install a custom `log::Log` implementation
-    # that itself calls `rand::rng()`; bergshamra installs no logger
+    # that itself calls `rand::rng()`; ribergshamra installs no logger
     # and does not reach for `rand::rng()` in any such context. The fix
     # is in rand 0.9, but num-bigint-dig pins rand 0.8, so even bumping
     # our direct dep would not remove the transitive 0.8 pull. Revisit
@@ -33,7 +33,7 @@ ignore = [
     # Note — ml-dsa advisory posture:
     # RUSTSEC-2025-0144 (timing side-channel in ML-DSA decomposition, fixed
     # by replacing hardware division with constant-time Barrett reduction)
-    # is patched in ml-dsa >= 0.1.0-rc.3. Bergshamra depends on ml-dsa 0.1.1
+    # is patched in ml-dsa >= 0.1.0-rc.3. ribergshamra depends on ml-dsa 0.1.1
     # in the workspace Cargo.toml, so this advisory does not fire against
     # our Cargo.lock and needs no ignore entry. Revisit only if ml-dsa
     # is pinned backward.

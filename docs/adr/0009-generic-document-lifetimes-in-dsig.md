@@ -1,5 +1,11 @@
 # ADR-0009: Generic Document Lifetimes in the dsig Document APIs
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-07-10
 **Status:** Accepted
 **Context:** Supporting zero-copy documents that borrow from their retained input rather than requiring `Document<'static>`

@@ -1,5 +1,11 @@
 # ADR-0007: Reject Raw Inline KeyInfo Keys When Trust Anchors Are Configured
 
+> **Note (ribergshamra fork):** this ADR is a historical record from
+> bergshamra, written before Rhein Industries forked the workspace and renamed
+> it `ribergshamra` (0.10.0). "Bergshamra" below means the same code base;
+> crate names, paths and commands are updated to the `ribergshamra` crates,
+> and kryptering / tsp-ltv are now riptering / ritsp-ltv.
+
 **Date:** 2026-07-06
 **Status:** Accepted
 **Context:** XML-DSig verification when a caller allows inline `KeyInfo` keys
@@ -51,7 +57,7 @@ verification prefers the certificate-backed `<X509Data>` path before considering
 the raw key. This keeps valid anchored signatures from failing only because a
 raw `<KeyValue>` appears earlier in document order.
 
-The enforcement lives in `bergshamra-dsig`, not only in the CLI, because the
+The enforcement lives in `ribergshamra-dsig`, not only in the CLI, because the
 library is the primary API surface for most deployments.
 
 ## Library Usage
@@ -60,8 +66,8 @@ For protocols with pre-established signing keys, use the secure constructor and
 preload the expected keys:
 
 ```rust
-use bergshamra_dsig::{context::DsigContext, verify};
-use bergshamra_keys::{loader, KeysManager};
+use ribergshamra_dsig::{context::DsigContext, verify};
+use ribergshamra_keys::{loader, KeysManager};
 
 let mut keys = KeysManager::new();
 let idp_key = loader::load_x509_cert_pem(idp_cert_pem.as_bytes())?;
@@ -79,8 +85,8 @@ from `<X509Data>`, use permissive mode with trusted anchors and leave
 `allow_raw_inline_keyinfo_with_trust_anchors` disabled:
 
 ```rust
-use bergshamra_dsig::{context::DsigContext, verify};
-use bergshamra_keys::KeysManager;
+use ribergshamra_dsig::{context::DsigContext, verify};
+use ribergshamra_keys::KeysManager;
 
 let mut keys = KeysManager::new();
 let ca_der = std::fs::read("ca.der")?;
@@ -123,7 +129,7 @@ for normal verification of untrusted XML. Prefer one of these safer patterns:
   configured trust anchors when inline signer certificates are expected.
 
 The CLI exposes the same compatibility behavior as
-`bergshamra verify --x509-skip-strict-checks`, primarily for xmlsec test-suite
+`ribergshamra verify --x509-skip-strict-checks`, primarily for xmlsec test-suite
 compatibility. Library users should use
 the chained builder call
 `.with_allow_raw_inline_keyinfo_with_trust_anchors(true)` only when they
@@ -201,7 +207,7 @@ Regression coverage was added for:
 The original security reproducer is:
 
 ```bash
-cargo run -q -p bergshamra -- verify \
+cargo run -q -p ribergshamra -- verify \
   --trusted test-data/keys/cacert.pem \
   raw_keyvalue_signed.xml
 ```
@@ -215,7 +221,7 @@ raw inline KeyInfo key is not trusted when trust anchors are configured
 The compatibility profile remains explicit:
 
 ```bash
-cargo run -q -p bergshamra -- verify \
+cargo run -q -p ribergshamra -- verify \
   --x509-skip-strict-checks \
   --trusted test-data/keys/cacert.pem \
   raw_keyvalue_signed.xml
@@ -224,8 +230,8 @@ cargo run -q -p bergshamra -- verify \
 ## Location
 
 - Library policy field and builder:
-  `crates/bergshamra-dsig/src/context.rs`
+  `crates/ribergshamra-dsig/src/context.rs`
 - Raw inline key rejection:
-  `crates/bergshamra-dsig/src/verify.rs`
+  `crates/ribergshamra-dsig/src/verify.rs`
 - CLI compatibility mapping:
-  `crates/bergshamra/src/main.rs`
+  `crates/ribergshamra/src/main.rs`
