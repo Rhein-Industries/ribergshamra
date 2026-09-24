@@ -5,9 +5,9 @@ ribergshamra is Rhein Industries' maintained fork of
 from 0.10.0 on describe ribergshamra. The history of bergshamra up to 0.9.1,
 the release ribergshamra was forked from, is kept unchanged below.
 
-## 0.10.0 — first ribergshamra release
+## 0.10.0 — 2026-09-24 — first ribergshamra release
 
-Not yet published to crates.io. Changes relative to bergshamra 0.9.1
+Changes relative to bergshamra 0.9.1
 (upstream tag `v0.9.1`, commit `c9fbaca`):
 
 ### Changed
