@@ -1897,9 +1897,9 @@ dependencies = [
 
 [[package]]
 name = "riptering"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f667613e49519ba2b2d5feb5f46bbc2b460ec29ae63e2ee45a3cd6a6fd0bf8"
+checksum = "ebc42e1aef25e1cee3331109dc14051a6120734a3b9e3dc1c4f026b0cdcba512"
 dependencies = [
  "aes 0.9.1",
  "aes-gcm",
