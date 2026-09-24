@@ -95,7 +95,7 @@ criterion = "0.5"
 
 # Shared crypto backend: riptering, Rhein Industries' maintained fork of
 # kryptering. Features are forwarded by the member crates under the same names.
-riptering = { version = "0.6", default-features = false }
+riptering = { version = "0.6.1", default-features = false }
 
 # Shared trust/validation infrastructure: ritsp-ltv, Rhein Industries'
 # maintained fork of tsp-ltv (built on riptering).

@@ -29,10 +29,10 @@ Not yet published to crates.io. Changes relative to bergshamra 0.9.1
   feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
   and `PqAlgorithm::to_riptering` replace `kryptering_algorithm_uri` and
   `to_kryptering`.
-- riptering refuses RSA keys below 2048 bits with every provider (kryptering
-  did so only with AWS-LC), so the RustCrypto configuration no longer accepts
-  historical 512- and 1024-bit RSA keys and certificate chains. riptering
-  also adds AES-CBC and AES-KW length checks, a bounded RSA-PSS salt length
+- Requires riptering 0.6.1, which keeps kryptering's RSA behaviour for this
+  workspace: RustCrypto with `legacy-algorithms` (a default feature) still
+  accepts historical 512- and 1024-bit RSA keys and certificate chains, while
+  AWS-LC and FIPS builds require at least 2048 bits. riptering also adds AES-CBC and AES-KW length checks, a bounded RSA-PSS salt length
   and PKCS#11 session hardening; see its changelog.
 - XML-DSig/XML-Enc algorithm URIs, XML namespaces, canonicalization and the
   `test-data/` and `specs/` fixtures are unchanged.

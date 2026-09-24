@@ -37,10 +37,10 @@ Rust 1.88.
   tsp-ltv 0.4, so errors, keys and provider types come from riptering. The
   feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
   and `PqAlgorithm::to_riptering` replace their `kryptering` names.
-- **RSA key size.** riptering refuses RSA keys below 2048 bits with every
-  provider (kryptering did so only with AWS-LC), so the RustCrypto
-  configuration no longer accepts historical 512- and 1024-bit RSA keys and
-  certificate chains.
+- **RSA key size.** Unchanged from bergshamra: with riptering 0.6.1, the
+  RustCrypto configuration with `legacy-algorithms` (a default feature) still
+  accepts historical 512- and 1024-bit RSA keys and certificate chains, and
+  AWS-LC and FIPS builds require at least 2048 bits.
 - **Project.** Package metadata points at
   <https://github.com/Rhein-Industries/ribergshamra>; CI runs on
   GitHub-hosted runners and publishing is manual for now.
@@ -131,9 +131,8 @@ ribergshamra's default RustCrypto configuration is tested against the full
 are the same tests used by the xmlsec1 C library, covering test vectors from
 the W3C, Merlin, Aleksey, IAIK, NIST, and Phaos interop suites.
 
-The totals below are bergshamra 0.9.1's (on kryptering 0.5). Fixtures that
-use RSA keys or CA certificates below 2048 bits are affected by riptering's
-2048-bit RSA minimum (see above).
+The totals below are bergshamra 0.9.1's (on kryptering 0.5); ribergshamra's
+CI checks the same totals on riptering 0.6.1.
 
 | Suite | Passed | Failed | Skipped |
 |-------|--------|--------|---------|
