@@ -54,27 +54,27 @@ impl KeysManager {
     pub fn find_rsa(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::Rsa)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::Rsa)
     }
 
     /// Find the first key that has an EC P-256 key.
     pub fn find_ec_p256(&self) -> Option<&Key> {
         self.keys.iter().find(|key| {
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P256)
+            key.data.algorithm() == riptering::KeyAlgorithm::Ec(riptering::EcCurve::P256)
         })
     }
 
     /// Find the first key that has an EC P-384 key.
     pub fn find_ec_p384(&self) -> Option<&Key> {
         self.keys.iter().find(|key| {
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P384)
+            key.data.algorithm() == riptering::KeyAlgorithm::Ec(riptering::EcCurve::P384)
         })
     }
 
     /// Find the first key that has an EC P-521 key.
     pub fn find_ec_p521(&self) -> Option<&Key> {
         self.keys.iter().find(|key| {
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P521)
+            key.data.algorithm() == riptering::KeyAlgorithm::Ec(riptering::EcCurve::P521)
         })
     }
 
@@ -82,20 +82,20 @@ impl KeysManager {
     pub fn find_hmac(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::Hmac)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::Hmac)
     }
 
     /// Find the first AES key.
     pub fn find_aes(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::Aes)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::Aes)
     }
 
     /// Find an AES key with the specified byte length.
     pub fn find_aes_by_size(&self, size_bytes: usize) -> Option<&Key> {
         self.keys.iter().find(|key| {
-            key.data.algorithm() == kryptering::KeyAlgorithm::Aes
+            key.data.algorithm() == riptering::KeyAlgorithm::Aes
                 && key
                     .symmetric_key_bytes()
                     .is_some_and(|bytes| bytes.len() == size_bytes)
@@ -121,27 +121,27 @@ impl KeysManager {
     pub fn find_dh(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::Dh)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::Dh)
     }
 
     /// Find the first Ed25519 key.
     pub fn find_ed25519(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::Ed25519)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::Ed25519)
     }
 
     /// Find the first X25519 key.
     pub fn find_x25519(&self) -> Option<&Key> {
         self.keys
             .iter()
-            .find(|key| key.data.algorithm() == kryptering::KeyAlgorithm::X25519)
+            .find(|key| key.data.algorithm() == riptering::KeyAlgorithm::X25519)
     }
 
     /// Find an RSA key with a private key component.
     pub fn find_rsa_private(&self) -> Option<&Key> {
         self.keys.iter().find(|key| {
-            key.data.algorithm() == kryptering::KeyAlgorithm::Rsa && key.has_private_key()
+            key.data.algorithm() == riptering::KeyAlgorithm::Rsa && key.has_private_key()
         })
     }
 

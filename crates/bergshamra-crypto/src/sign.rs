@@ -2,17 +2,17 @@
 
 //! Provider-neutral XML Signature operations.
 //!
-//! All key material is held by [`kryptering::SoftwareKey`]. This module only
+//! All key material is held by [`riptering::SoftwareKey`]. This module only
 //! translates XML algorithm identifiers and signature encodings; primitive
-//! implementations live behind kryptering's selected provider.
+//! implementations live behind riptering's selected provider.
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::{Signer as _, Verifier as _};
+use riptering::{Signer as _, Verifier as _};
 
-use crate::map_kryptering_err;
+use crate::map_riptering_err;
 
 /// Opaque, shared software key used for signing and verification.
-pub type SigningKey = kryptering::SoftwareKey;
+pub type SigningKey = riptering::SoftwareKey;
 
 /// Post-quantum algorithm variants retained as XML-facing metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,8 +44,8 @@ impl PqAlgorithm {
     }
 
     #[cfg(feature = "post-quantum")]
-    pub fn to_kryptering(self) -> kryptering::PqAlgorithm {
-        use kryptering::{MlDsaVariant as M, PqAlgorithm as P, SlhDsaVariant as S};
+    pub fn to_riptering(self) -> riptering::PqAlgorithm {
+        use riptering::{MlDsaVariant as M, PqAlgorithm as P, SlhDsaVariant as S};
         match self {
             Self::MlDsa44 => P::MlDsa(M::MlDsa44),
             Self::MlDsa65 => P::MlDsa(M::MlDsa65),
@@ -83,7 +83,7 @@ pub trait SignatureAlgorithm: Send {
 #[derive(Clone)]
 struct ProviderSignature {
     uri: &'static str,
-    algorithm: kryptering::SignatureAlgorithm,
+    algorithm: riptering::SignatureAlgorithm,
     context: Vec<u8>,
 }
 
@@ -95,20 +95,17 @@ impl SignatureAlgorithm for ProviderSignature {
     fn sign(&self, key: &SigningKey, data: &[u8]) -> Result<Vec<u8>, Error> {
         let algorithm = algorithm_for_key(self.algorithm, key);
         let signer =
-            kryptering::SoftwareSigner::new_with_pq_context(algorithm, key.clone(), &self.context)
-                .map_err(map_kryptering_err)?;
-        signer.sign(data).map_err(map_kryptering_err)
+            riptering::SoftwareSigner::new_with_pq_context(algorithm, key.clone(), &self.context)
+                .map_err(map_riptering_err)?;
+        signer.sign(data).map_err(map_riptering_err)
     }
 
     fn verify(&self, key: &SigningKey, data: &[u8], signature: &[u8]) -> Result<bool, Error> {
         let algorithm = algorithm_for_key(self.algorithm, key);
-        let verifier = kryptering::SoftwareVerifier::new_with_pq_context(
-            algorithm,
-            key.clone(),
-            &self.context,
-        )
-        .map_err(map_kryptering_err)?;
-        verifier.verify(data, signature).map_err(map_kryptering_err)
+        let verifier =
+            riptering::SoftwareVerifier::new_with_pq_context(algorithm, key.clone(), &self.context)
+                .map_err(map_riptering_err)?;
+        verifier.verify(data, signature).map_err(map_riptering_err)
     }
 
     fn verify_truncated(
@@ -121,7 +118,7 @@ impl SignatureAlgorithm for ProviderSignature {
         if signature.len() != expected_len_bytes {
             return Ok(false);
         }
-        if !matches!(self.algorithm, kryptering::SignatureAlgorithm::Hmac(_)) {
+        if !matches!(self.algorithm, riptering::SignatureAlgorithm::Hmac(_)) {
             return self.verify(key, data, signature);
         }
         let expected = self.sign(key, data)?;
@@ -133,12 +130,12 @@ impl SignatureAlgorithm for ProviderSignature {
 }
 
 fn algorithm_for_key(
-    algorithm: kryptering::SignatureAlgorithm,
+    algorithm: riptering::SignatureAlgorithm,
     key: &SigningKey,
-) -> kryptering::SignatureAlgorithm {
+) -> riptering::SignatureAlgorithm {
     match (algorithm, key.algorithm()) {
-        (kryptering::SignatureAlgorithm::Ecdsa(_, hash), kryptering::KeyAlgorithm::Ec(curve)) => {
-            kryptering::SignatureAlgorithm::Ecdsa(curve, hash)
+        (riptering::SignatureAlgorithm::Ecdsa(_, hash), riptering::KeyAlgorithm::Ec(curve)) => {
+            riptering::SignatureAlgorithm::Ecdsa(curve, hash)
         }
         _ => algorithm,
     }
@@ -192,7 +189,7 @@ pub fn from_uri_with_context(
     uri: &str,
     context: Option<Vec<u8>>,
 ) -> Result<Box<dyn SignatureAlgorithm>, Error> {
-    use kryptering::{EcCurve as C, HashAlgorithm as H, SignatureAlgorithm as S};
+    use riptering::{EcCurve as C, HashAlgorithm as H, SignatureAlgorithm as S};
 
     let algorithm = match uri {
         algorithm::RSA_SHA1 => S::RsaPkcs1v15(H::Sha1),
@@ -239,23 +236,23 @@ pub fn from_uri_with_context(
         #[cfg(feature = "legacy-algorithms")]
         algorithm::DSA_SHA256 => S::Dsa(H::Sha256),
         #[cfg(feature = "post-quantum")]
-        algorithm::ML_DSA_44 => S::MlDsa(kryptering::MlDsaVariant::MlDsa44),
+        algorithm::ML_DSA_44 => S::MlDsa(riptering::MlDsaVariant::MlDsa44),
         #[cfg(feature = "post-quantum")]
-        algorithm::ML_DSA_65 => S::MlDsa(kryptering::MlDsaVariant::MlDsa65),
+        algorithm::ML_DSA_65 => S::MlDsa(riptering::MlDsaVariant::MlDsa65),
         #[cfg(feature = "post-quantum")]
-        algorithm::ML_DSA_87 => S::MlDsa(kryptering::MlDsaVariant::MlDsa87),
+        algorithm::ML_DSA_87 => S::MlDsa(riptering::MlDsaVariant::MlDsa87),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_128F => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_128f),
+        algorithm::SLH_DSA_SHA2_128F => S::SlhDsa(riptering::SlhDsaVariant::Sha2_128f),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_128S => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_128s),
+        algorithm::SLH_DSA_SHA2_128S => S::SlhDsa(riptering::SlhDsaVariant::Sha2_128s),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_192F => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_192f),
+        algorithm::SLH_DSA_SHA2_192F => S::SlhDsa(riptering::SlhDsaVariant::Sha2_192f),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_192S => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_192s),
+        algorithm::SLH_DSA_SHA2_192S => S::SlhDsa(riptering::SlhDsaVariant::Sha2_192s),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_256F => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_256f),
+        algorithm::SLH_DSA_SHA2_256F => S::SlhDsa(riptering::SlhDsaVariant::Sha2_256f),
         #[cfg(feature = "post-quantum")]
-        algorithm::SLH_DSA_SHA2_256S => S::SlhDsa(kryptering::SlhDsaVariant::Sha2_256s),
+        algorithm::SLH_DSA_SHA2_256S => S::SlhDsa(riptering::SlhDsaVariant::Sha2_256s),
         _ => {
             return Err(Error::UnsupportedAlgorithm(format!(
                 "signature algorithm: {uri}"
@@ -280,13 +277,13 @@ pub fn from_uri_with_context(
     }))
 }
 
-/// Return the canonical XML-DSig URI for a kryptering signature algorithm.
-pub fn kryptering_algorithm_uri(alg: kryptering::SignatureAlgorithm) -> Option<&'static str> {
+/// Return the canonical XML-DSig URI for a riptering signature algorithm.
+pub fn riptering_algorithm_uri(alg: riptering::SignatureAlgorithm) -> Option<&'static str> {
     canonical_uri(alg)
 }
 
-fn canonical_uri(alg: kryptering::SignatureAlgorithm) -> Option<&'static str> {
-    use kryptering::{HashAlgorithm as H, SignatureAlgorithm as S};
+fn canonical_uri(alg: riptering::SignatureAlgorithm) -> Option<&'static str> {
+    use riptering::{HashAlgorithm as H, SignatureAlgorithm as S};
     Some(match alg {
         S::RsaPkcs1v15(H::Sha1) => algorithm::RSA_SHA1,
         S::RsaPkcs1v15(H::Sha224) => algorithm::RSA_SHA224,
@@ -332,23 +329,23 @@ fn canonical_uri(alg: kryptering::SignatureAlgorithm) -> Option<&'static str> {
         #[cfg(feature = "legacy-algorithms")]
         S::Dsa(H::Sha256) => algorithm::DSA_SHA256,
         #[cfg(feature = "post-quantum")]
-        S::MlDsa(kryptering::MlDsaVariant::MlDsa44) => algorithm::ML_DSA_44,
+        S::MlDsa(riptering::MlDsaVariant::MlDsa44) => algorithm::ML_DSA_44,
         #[cfg(feature = "post-quantum")]
-        S::MlDsa(kryptering::MlDsaVariant::MlDsa65) => algorithm::ML_DSA_65,
+        S::MlDsa(riptering::MlDsaVariant::MlDsa65) => algorithm::ML_DSA_65,
         #[cfg(feature = "post-quantum")]
-        S::MlDsa(kryptering::MlDsaVariant::MlDsa87) => algorithm::ML_DSA_87,
+        S::MlDsa(riptering::MlDsaVariant::MlDsa87) => algorithm::ML_DSA_87,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_128f) => algorithm::SLH_DSA_SHA2_128F,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_128f) => algorithm::SLH_DSA_SHA2_128F,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_128s) => algorithm::SLH_DSA_SHA2_128S,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_128s) => algorithm::SLH_DSA_SHA2_128S,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_192f) => algorithm::SLH_DSA_SHA2_192F,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_192f) => algorithm::SLH_DSA_SHA2_192F,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_192s) => algorithm::SLH_DSA_SHA2_192S,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_192s) => algorithm::SLH_DSA_SHA2_192S,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_256f) => algorithm::SLH_DSA_SHA2_256F,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_256f) => algorithm::SLH_DSA_SHA2_256F,
         #[cfg(feature = "post-quantum")]
-        S::SlhDsa(kryptering::SlhDsaVariant::Sha2_256s) => algorithm::SLH_DSA_SHA2_256S,
+        S::SlhDsa(riptering::SlhDsaVariant::Sha2_256s) => algorithm::SLH_DSA_SHA2_256S,
         _ => return None,
     })
 }
@@ -360,7 +357,7 @@ mod tests {
     #[test]
     fn hmac_roundtrip_and_declared_truncation() {
         let key =
-            SigningKey::from_symmetric_bytes(kryptering::KeyAlgorithm::Hmac, b"secret").unwrap();
+            SigningKey::from_symmetric_bytes(riptering::KeyAlgorithm::Hmac, b"secret").unwrap();
         let algorithm = from_uri(algorithm::HMAC_SHA256).unwrap();
         let signature = algorithm.sign(&key, b"payload").unwrap();
         assert!(algorithm.verify(&key, b"payload", &signature).unwrap());

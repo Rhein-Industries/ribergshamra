@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
-//! PKCS#12 KDF, MAC, and PBE operations delegated to kryptering.
+//! PKCS#12 KDF, MAC, and PBE operations delegated to riptering.
 
 use bergshamra_core::Error;
 
 #[cfg(test)]
-pub const ID_KEY: u8 = kryptering::pkcs12::ID_KEY;
-pub const ID_MAC: u8 = kryptering::pkcs12::ID_MAC;
+pub const ID_KEY: u8 = riptering::pkcs12::ID_KEY;
+pub const ID_MAC: u8 = riptering::pkcs12::ID_MAC;
 
 pub fn pkcs12_kdf_sha1(
     id: u8,
@@ -15,8 +15,8 @@ pub fn pkcs12_kdf_sha1(
     iterations: u32,
     output_len: usize,
 ) -> Result<Vec<u8>, Error> {
-    kryptering::pkcs12::derive(
-        kryptering::HashAlgorithm::Sha1,
+    riptering::pkcs12::derive(
+        riptering::HashAlgorithm::Sha1,
         id,
         password,
         salt,
@@ -33,8 +33,8 @@ pub fn pkcs12_kdf_sha256(
     iterations: u32,
     output_len: usize,
 ) -> Result<Vec<u8>, Error> {
-    kryptering::pkcs12::derive(
-        kryptering::HashAlgorithm::Sha256,
+    riptering::pkcs12::derive(
+        riptering::HashAlgorithm::Sha256,
         id,
         password,
         salt,
@@ -51,7 +51,7 @@ pub fn decrypt_pbe_sha1_3des(
     iterations: u32,
 ) -> Result<Vec<u8>, Error> {
     #[cfg(feature = "legacy-algorithms")]
-    return kryptering::pkcs12::decrypt_pbe_sha1_3des(ciphertext, password, salt, iterations)
+    return riptering::pkcs12::decrypt_pbe_sha1_3des(ciphertext, password, salt, iterations)
         .map_err(map_error);
     #[cfg(not(feature = "legacy-algorithms"))]
     {
@@ -63,33 +63,33 @@ pub fn decrypt_pbe_sha1_3des(
 }
 
 pub fn decrypt_pbes2_aes256cbc(
-    hash: kryptering::HashAlgorithm,
+    hash: riptering::HashAlgorithm,
     ciphertext: &[u8],
     password: &str,
     salt: &[u8],
     iterations: u32,
     iv: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    kryptering::pkcs12::decrypt_pbes2_aes256cbc(hash, ciphertext, password, salt, iterations, iv)
+    riptering::pkcs12::decrypt_pbes2_aes256cbc(hash, ciphertext, password, salt, iterations, iv)
         .map_err(map_error)
 }
 
 pub fn compute_hmac(
-    hash: kryptering::HashAlgorithm,
+    hash: riptering::HashAlgorithm,
     key: &[u8],
     data: &[u8],
 ) -> Result<Vec<u8>, Error> {
-    kryptering::digest::compute_hmac(hash, key, data).map_err(map_error)
+    riptering::digest::compute_hmac(hash, key, data).map_err(map_error)
 }
 
-fn map_error(error: kryptering::Error) -> Error {
+fn map_error(error: riptering::Error) -> Error {
     match error {
-        kryptering::Error::Key(message) => Error::Key(message),
-        kryptering::Error::Crypto(message) => Error::Crypto(message),
-        error @ kryptering::Error::UnsupportedAlgorithm { .. } => {
+        riptering::Error::Key(message) => Error::Key(message),
+        riptering::Error::Crypto(message) => Error::Crypto(message),
+        error @ riptering::Error::UnsupportedAlgorithm { .. } => {
             Error::UnsupportedAlgorithm(error.to_string())
         }
-        kryptering::Error::Io(error) => Error::Io(error),
+        riptering::Error::Io(error) => Error::Io(error),
         #[allow(unreachable_patterns)]
         error => Error::Crypto(error.to_string()),
     }

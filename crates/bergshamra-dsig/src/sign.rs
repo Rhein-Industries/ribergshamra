@@ -278,7 +278,7 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
         // otherwise the emitted document would declare one algorithm while the
         // SignatureValue was produced with another, making it self-inconsistent
         // and likely to fail interop verification.
-        let signer_uri = bergshamra_crypto::sign::kryptering_algorithm_uri(hsm_signer.algorithm());
+        let signer_uri = bergshamra_crypto::sign::riptering_algorithm_uri(hsm_signer.algorithm());
         if signer_uri != Some(sig_method_uri.as_str()) {
             return Err(Error::UnsupportedAlgorithm(format!(
                 "HSM signer algorithm {:?} (URI {}) does not match the template's SignatureMethod {sig_method_uri}",
@@ -288,7 +288,7 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
         }
         hsm_signer
             .sign(&c14n_signed_info)
-            .map_err(crate::map_kryptering_err)?
+            .map_err(crate::map_riptering_err)?
     } else {
         // Software key path (existing behaviour)
         let key_ref = ctx.keys_manager.first_key()?;
@@ -648,7 +648,7 @@ pub fn sign_document(ctx: &DsigContext, doc: &mut Document<'_>) -> Result<(), Er
     )?;
 
     let signature = if let Some(ref hsm_signer) = ctx.hsm_signer {
-        let signer_uri = bergshamra_crypto::sign::kryptering_algorithm_uri(hsm_signer.algorithm());
+        let signer_uri = bergshamra_crypto::sign::riptering_algorithm_uri(hsm_signer.algorithm());
         if signer_uri != Some(sig_method_uri.as_str()) {
             return Err(Error::UnsupportedAlgorithm(format!(
                 "HSM signer algorithm {:?} (URI {}) does not match the template's SignatureMethod {sig_method_uri}",
@@ -658,7 +658,7 @@ pub fn sign_document(ctx: &DsigContext, doc: &mut Document<'_>) -> Result<(), Er
         }
         hsm_signer
             .sign(&c14n_signed_info)
-            .map_err(crate::map_kryptering_err)?
+            .map_err(crate::map_riptering_err)?
     } else {
         let key_ref = ctx.keys_manager.first_key()?;
         let signing_key = key_ref
@@ -2076,7 +2076,7 @@ mod tests {
         let mut keys = bergshamra_keys::KeysManager::new();
         keys.add_key(bergshamra_keys::Key::new(
             bergshamra_keys::KeyData::from_symmetric_bytes(
-                kryptering::KeyAlgorithm::Hmac,
+                riptering::KeyAlgorithm::Hmac,
                 b"signing-reference-secret",
             )
             .unwrap(),

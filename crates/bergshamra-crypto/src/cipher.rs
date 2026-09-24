@@ -3,7 +3,7 @@
 //! Block cipher algorithm implementations (AES-CBC, AES-GCM, 3DES-CBC).
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::algorithm::{AesKeySize, CipherAlgorithm as KCipherAlgorithm};
+use riptering::algorithm::{AesKeySize, CipherAlgorithm as KCipherAlgorithm};
 
 /// Trait for cipher algorithms.
 pub trait CipherAlgorithm: Send {
@@ -27,7 +27,7 @@ pub trait CipherAlgorithm: Send {
     fn key_size(&self) -> usize;
 }
 
-/// Map an XML algorithm URI to a `kryptering::CipherAlgorithm`.
+/// Map an XML algorithm URI to a `riptering::CipherAlgorithm`.
 fn uri_to_cipher(uri: &str) -> Result<(KCipherAlgorithm, &'static str), Error> {
     match uri {
         algorithm::AES128_CBC => Ok((
@@ -67,20 +67,20 @@ fn uri_to_cipher(uri: &str) -> Result<(KCipherAlgorithm, &'static str), Error> {
 /// Create a cipher algorithm from its URI.
 pub fn from_uri(uri: &str) -> Result<Box<dyn CipherAlgorithm>, Error> {
     let (algo, static_uri) = uri_to_cipher(uri)?;
-    Ok(Box::new(KrypteringCipher {
+    Ok(Box::new(RipteringCipher {
         algo,
         uri: static_uri,
     }))
 }
 
-// ── Wrapper that delegates to kryptering ────────────────────────────
+// ── Wrapper that delegates to riptering ────────────────────────────
 
-struct KrypteringCipher {
+struct RipteringCipher {
     algo: KCipherAlgorithm,
     uri: &'static str,
 }
 
-impl CipherAlgorithm for KrypteringCipher {
+impl CipherAlgorithm for RipteringCipher {
     fn uri(&self) -> &'static str {
         self.uri
     }
@@ -91,28 +91,28 @@ impl CipherAlgorithm for KrypteringCipher {
 
     fn encrypt(&self, key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, Error> {
         match self.algo {
-            // AES-CBC lives under kryptering::hazmat::aes_cbc because it is
+            // AES-CBC lives under riptering::hazmat::aes_cbc because it is
             // unauthenticated and a padding-oracle hazard when exposed to
             // remote attackers. XML-Enc 1.0 requires it for interop, which
             // is the legitimate use case here; the hazard still applies and
             // callers must authenticate ciphertexts out of band.
             KCipherAlgorithm::AesCbc(size) => {
-                kryptering::hazmat::aes_cbc::encrypt(size, key, plaintext)
-                    .map_err(crate::map_kryptering_err)
+                riptering::hazmat::aes_cbc::encrypt(size, key, plaintext)
+                    .map_err(crate::map_riptering_err)
             }
-            _ => kryptering::cipher::encrypt(self.algo, key, plaintext)
-                .map_err(crate::map_kryptering_err),
+            _ => riptering::cipher::encrypt(self.algo, key, plaintext)
+                .map_err(crate::map_riptering_err),
         }
     }
 
     fn decrypt(&self, key: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
         match self.algo {
             KCipherAlgorithm::AesCbc(size) => {
-                kryptering::hazmat::aes_cbc::decrypt(size, key, ciphertext)
-                    .map_err(crate::map_kryptering_err)
+                riptering::hazmat::aes_cbc::decrypt(size, key, ciphertext)
+                    .map_err(crate::map_riptering_err)
             }
-            _ => kryptering::cipher::decrypt(self.algo, key, ciphertext)
-                .map_err(crate::map_kryptering_err),
+            _ => riptering::cipher::decrypt(self.algo, key, ciphertext)
+                .map_err(crate::map_riptering_err),
         }
     }
 }

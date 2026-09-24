@@ -468,7 +468,7 @@ fn verify_signature_node(
         // Treat a mismatch as an invalid signature rather than a hard error so
         // callers get a normal verification verdict.
         let verifier_uri =
-            bergshamra_crypto::sign::kryptering_algorithm_uri(hsm_verifier.algorithm());
+            bergshamra_crypto::sign::riptering_algorithm_uri(hsm_verifier.algorithm());
         if verifier_uri != Some(sig_method_uri) {
             return Ok(VerifyResult::Invalid {
                 reason: format!(
@@ -480,7 +480,7 @@ fn verify_signature_node(
         }
         let valid = hsm_verifier
             .verify(&c14n_signed_info, &sig_value)
-            .map_err(crate::map_kryptering_err)?;
+            .map_err(crate::map_riptering_err)?;
 
         return if valid {
             if let Some(reason) = reference_digest_policy_failure(ctx, &verified_refs) {
@@ -3449,7 +3449,7 @@ fn try_unwrap_encrypted_key(
     // Create an HMAC key from the unwrapped session key
     Ok(bergshamra_keys::Key::new(
         bergshamra_keys::key::KeyData::from_symmetric_bytes(
-            kryptering::KeyAlgorithm::Hmac,
+            riptering::KeyAlgorithm::Hmac,
             &session_key_bytes,
         )?,
         bergshamra_keys::key::KeyUsage::Any,
@@ -3902,24 +3902,24 @@ fn key_data_from_spki(
     let algorithm = if oid == der::oid::db::rfc5912::RSA_ENCRYPTION
         || oid == der::oid::db::rfc5912::ID_RSASSA_PSS
     {
-        kryptering::KeyAlgorithm::Rsa
+        riptering::KeyAlgorithm::Rsa
     } else if oid == der::oid::db::rfc5912::ID_DSA {
-        kryptering::KeyAlgorithm::Dsa
+        riptering::KeyAlgorithm::Dsa
     } else if oid == der::oid::db::rfc5912::ID_EC_PUBLIC_KEY {
         let params = spki.algorithm.parameters.as_ref()?;
         let curve_oid: der::asn1::ObjectIdentifier = params.decode_as().ok()?;
         let curve = if curve_oid == der::oid::db::rfc5912::SECP_256_R_1 {
-            kryptering::EcCurve::P256
+            riptering::EcCurve::P256
         } else if curve_oid == der::oid::db::rfc5912::SECP_384_R_1 {
-            kryptering::EcCurve::P384
+            riptering::EcCurve::P384
         } else if curve_oid == der::oid::db::rfc5912::SECP_521_R_1 {
-            kryptering::EcCurve::P521
+            riptering::EcCurve::P521
         } else {
             return None;
         };
-        kryptering::KeyAlgorithm::Ec(curve)
+        riptering::KeyAlgorithm::Ec(curve)
     } else if oid == der::oid::db::rfc8410::ID_ED_25519 {
-        kryptering::KeyAlgorithm::Ed25519
+        riptering::KeyAlgorithm::Ed25519
     } else {
         return None;
     };
@@ -4063,7 +4063,7 @@ mod tests {
         let mut keys = bergshamra_keys::KeysManager::new();
         keys.add_key(bergshamra_keys::Key::new(
             bergshamra_keys::KeyData::from_symmetric_bytes(
-                kryptering::KeyAlgorithm::Hmac,
+                riptering::KeyAlgorithm::Hmac,
                 b"reference-policy-secret",
             )
             .unwrap(),

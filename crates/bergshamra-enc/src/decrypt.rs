@@ -274,7 +274,7 @@ fn decrypt_encrypted_key(
                 ctx.ensure_hsm_decryptor_matches(enc_uri)?;
                 hsm_decryptor
                     .decrypt(&cipher_bytes)
-                    .map_err(map_kryptering_err)
+                    .map_err(map_riptering_err)
             } else {
                 // Software path
                 let oaep_params = read_oaep_params(doc, enc_method_id);
@@ -302,7 +302,7 @@ fn decrypt_encrypted_key(
                 ctx.ensure_hsm_key_unwrapper_matches(enc_uri)?;
                 hsm_unwrapper
                     .unwrap(&cipher_bytes)
-                    .map_err(map_kryptering_err)
+                    .map_err(map_riptering_err)
             } else {
                 // Software path
                 let kw = bergshamra_crypto::keywrap::from_uri(enc_uri)?;
@@ -430,7 +430,7 @@ fn resolve_agreement_method_kek(
             let recipient_key = resolve_recipient_key(ctx, doc, agreement_id)?;
 
             let curve = match recipient_key.data.algorithm() {
-                kryptering::KeyAlgorithm::Ec(curve) if recipient_key.has_private_key() => curve,
+                riptering::KeyAlgorithm::Ec(curve) if recipient_key.has_private_key() => curve,
                 _ => {
                     return Err(Error::Key("recipient key is not an EC private key".into()));
                 }
@@ -465,7 +465,7 @@ fn resolve_agreement_method_kek(
             }
             let recipient_key = resolve_recipient_key(ctx, doc, agreement_id)?;
 
-            if recipient_key.data.algorithm() != kryptering::KeyAlgorithm::X25519
+            if recipient_key.data.algorithm() != riptering::KeyAlgorithm::X25519
                 || !recipient_key.has_private_key()
             {
                 return Err(Error::Key(
@@ -618,9 +618,7 @@ fn resolve_recipient_key<'a>(
         .ok_or_else(|| Error::Key("no private key for key agreement".into()))
 }
 
-fn required_software_key(
-    key: &bergshamra_keys::key::Key,
-) -> Result<kryptering::SoftwareKey, Error> {
+fn required_software_key(key: &bergshamra_keys::key::Key) -> Result<riptering::SoftwareKey, Error> {
     key.software_key()?.ok_or_else(|| {
         Error::Key(format!(
             "{} key has no software representation",
@@ -1660,15 +1658,15 @@ fn build_id_map(doc: &Document<'_>, attr_names: &[&str]) -> HashMap<String, Node
     map
 }
 
-/// Convert a `kryptering::Error` to a `bergshamra_core::Error`.
-fn map_kryptering_err(e: kryptering::Error) -> Error {
+/// Convert a `riptering::Error` to a `bergshamra_core::Error`.
+fn map_riptering_err(e: riptering::Error) -> Error {
     match e {
-        kryptering::Error::Crypto(s) => Error::Crypto(s),
-        err @ kryptering::Error::UnsupportedAlgorithm { .. } => {
+        riptering::Error::Crypto(s) => Error::Crypto(s),
+        err @ riptering::Error::UnsupportedAlgorithm { .. } => {
             Error::UnsupportedAlgorithm(err.to_string())
         }
-        kryptering::Error::Key(s) => Error::Key(s),
-        kryptering::Error::Io(e) => Error::Io(e),
+        riptering::Error::Key(s) => Error::Key(s),
+        riptering::Error::Io(e) => Error::Io(e),
         #[allow(unreachable_patterns)]
         other => Error::Crypto(other.to_string()),
     }
@@ -1804,7 +1802,7 @@ mod tests {
         let mut keys = bergshamra_keys::KeysManager::new();
         keys.add_key(bergshamra_keys::Key::new(
             bergshamra_keys::KeyData::from_symmetric_bytes(
-                kryptering::KeyAlgorithm::Aes,
+                riptering::KeyAlgorithm::Aes,
                 &[0x42; 32],
             )
             .unwrap(),

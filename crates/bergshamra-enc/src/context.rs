@@ -28,22 +28,22 @@ pub struct EncContext {
     pub max_pbkdf2_iterations: u32,
     /// Optional HSM-backed decryptor for RSA key transport.
     /// When set, EncryptedKey elements are decrypted using this instead of software RSA keys.
-    pub hsm_decryptor: Option<Box<dyn kryptering::Decryptor>>,
+    pub hsm_decryptor: Option<Box<dyn riptering::Decryptor>>,
     /// Allowed EncryptionMethod Algorithm URIs for the HSM decryptor.
     /// Empty means "unbound" and fails closed at runtime.
     pub hsm_decryptor_algorithms: Vec<String>,
     /// Optional HSM-backed key unwrapper for AES-KW key unwrapping.
-    pub hsm_key_unwrapper: Option<Box<dyn kryptering::KeyWrapper>>,
+    pub hsm_key_unwrapper: Option<Box<dyn riptering::KeyWrapper>>,
     /// Allowed EncryptionMethod Algorithm URIs for the HSM key unwrapper.
     /// Empty means "unbound" and fails closed at runtime.
     pub hsm_key_unwrapper_algorithms: Vec<String>,
     /// Optional HSM-backed encryptor for RSA key transport encryption.
-    pub hsm_encryptor: Option<Box<dyn kryptering::Encryptor>>,
+    pub hsm_encryptor: Option<Box<dyn riptering::Encryptor>>,
     /// Allowed EncryptionMethod Algorithm URIs for the HSM encryptor.
     /// Empty means "unbound" and fails closed at runtime.
     pub hsm_encryptor_algorithms: Vec<String>,
     /// Optional HSM-backed key wrapper for AES-KW key wrapping.
-    pub hsm_key_wrapper: Option<Box<dyn kryptering::KeyWrapper>>,
+    pub hsm_key_wrapper: Option<Box<dyn riptering::KeyWrapper>>,
     /// Allowed EncryptionMethod Algorithm URIs for the HSM key wrapper.
     /// Empty means "unbound" and fails closed at runtime.
     pub hsm_key_wrapper_algorithms: Vec<String>,
@@ -148,7 +148,7 @@ impl EncContext {
     ///
     /// When set, RSA key transport decryption (unwrapping session keys)
     /// bypasses the `KeysManager` and delegates to the provided
-    /// [`kryptering::Decryptor`] implementation. Key material never leaves the HSM.
+    /// [`riptering::Decryptor`] implementation. Key material never leaves the HSM.
     ///
     /// `allowed_algorithms` must list the XML `EncryptionMethod` Algorithm URI(s)
     /// this decryptor is allowed to service (for example
@@ -157,7 +157,7 @@ impl EncContext {
     /// the HSM, so a misconfigured decryptor fails closed.
     pub fn with_hsm_decryptor(
         mut self,
-        decryptor: Box<dyn kryptering::Decryptor>,
+        decryptor: Box<dyn riptering::Decryptor>,
         allowed_algorithms: &[&str],
     ) -> Self {
         self.hsm_decryptor = Some(decryptor);
@@ -168,13 +168,13 @@ impl EncContext {
     /// Set an HSM-backed key unwrapper for AES-KW key unwrapping (builder style).
     ///
     /// When set, AES key unwrap operations bypass the `KeysManager` and
-    /// delegate to the provided [`kryptering::KeyWrapper`] implementation.
+    /// delegate to the provided [`riptering::KeyWrapper`] implementation.
     ///
     /// `allowed_algorithms` must list the XML `EncryptionMethod` Algorithm URI(s)
     /// this unwrapper is allowed to service (for example `kw-aes128`).
     pub fn with_hsm_key_unwrapper(
         mut self,
-        unwrapper: Box<dyn kryptering::KeyWrapper>,
+        unwrapper: Box<dyn riptering::KeyWrapper>,
         allowed_algorithms: &[&str],
     ) -> Self {
         self.hsm_key_unwrapper = Some(unwrapper);
@@ -186,14 +186,14 @@ impl EncContext {
     ///
     /// When set, RSA key transport encryption (wrapping session keys)
     /// bypasses the `KeysManager` and delegates to the provided
-    /// [`kryptering::Encryptor`] implementation.
+    /// [`riptering::Encryptor`] implementation.
     ///
     /// `allowed_algorithms` must list the XML `EncryptionMethod` Algorithm URI(s)
     /// this encryptor is allowed to service. Bergshamra checks the template's
     /// declared algorithm against this allow-list before delegating to the HSM.
     pub fn with_hsm_encryptor(
         mut self,
-        encryptor: Box<dyn kryptering::Encryptor>,
+        encryptor: Box<dyn riptering::Encryptor>,
         allowed_algorithms: &[&str],
     ) -> Self {
         self.hsm_encryptor = Some(encryptor);
@@ -204,13 +204,13 @@ impl EncContext {
     /// Set an HSM-backed key wrapper for AES-KW key wrapping (builder style).
     ///
     /// When set, AES key wrap operations bypass the `KeysManager` and
-    /// delegate to the provided [`kryptering::KeyWrapper`] implementation.
+    /// delegate to the provided [`riptering::KeyWrapper`] implementation.
     ///
     /// `allowed_algorithms` must list the XML `EncryptionMethod` Algorithm URI(s)
     /// this wrapper is allowed to service.
     pub fn with_hsm_key_wrapper(
         mut self,
-        wrapper: Box<dyn kryptering::KeyWrapper>,
+        wrapper: Box<dyn riptering::KeyWrapper>,
         allowed_algorithms: &[&str],
     ) -> Self {
         self.hsm_key_wrapper = Some(wrapper);
@@ -288,26 +288,26 @@ mod tests {
     use bergshamra_keys::KeysManager;
 
     struct DummyDecryptor;
-    impl kryptering::Decryptor for DummyDecryptor {
-        fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, kryptering::Error> {
+    impl riptering::Decryptor for DummyDecryptor {
+        fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, riptering::Error> {
             Ok(ciphertext.to_vec())
         }
     }
 
     struct DummyEncryptor;
-    impl kryptering::Encryptor for DummyEncryptor {
-        fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, kryptering::Error> {
+    impl riptering::Encryptor for DummyEncryptor {
+        fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, riptering::Error> {
             Ok(plaintext.to_vec())
         }
     }
 
     struct DummyWrapper;
-    impl kryptering::KeyWrapper for DummyWrapper {
-        fn wrap(&self, key_data: &[u8]) -> Result<Vec<u8>, kryptering::Error> {
+    impl riptering::KeyWrapper for DummyWrapper {
+        fn wrap(&self, key_data: &[u8]) -> Result<Vec<u8>, riptering::Error> {
             Ok(key_data.to_vec())
         }
 
-        fn unwrap(&self, wrapped: &[u8]) -> Result<Vec<u8>, kryptering::Error> {
+        fn unwrap(&self, wrapped: &[u8]) -> Result<Vec<u8>, riptering::Error> {
             Ok(wrapped.to_vec())
         }
     }

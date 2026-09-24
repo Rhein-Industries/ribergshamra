@@ -8,41 +8,32 @@ use der::{Decode, Encode};
 
 pub fn load_rsa_private_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let der = pem_der(pem_data, "PRIVATE KEY")?;
-    load_private_key_pkcs8_der_for(&der, kryptering::KeyAlgorithm::Rsa)
+    load_private_key_pkcs8_der_for(&der, riptering::KeyAlgorithm::Rsa)
 }
 
 pub fn load_rsa_public_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let der = pem_der(pem_data, "PUBLIC KEY")?;
-    load_spki_der_for(&der, kryptering::KeyAlgorithm::Rsa)
+    load_spki_der_for(&der, riptering::KeyAlgorithm::Rsa)
 }
 
 pub fn load_ec_p256_private_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let der = pem_der(pem_data, "PRIVATE KEY")?;
-    load_private_key_pkcs8_der_for(
-        &der,
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P256),
-    )
+    load_private_key_pkcs8_der_for(&der, riptering::KeyAlgorithm::Ec(riptering::EcCurve::P256))
 }
 
 pub fn load_ec_p384_private_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let der = pem_der(pem_data, "PRIVATE KEY")?;
-    load_private_key_pkcs8_der_for(
-        &der,
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P384),
-    )
+    load_private_key_pkcs8_der_for(&der, riptering::KeyAlgorithm::Ec(riptering::EcCurve::P384))
 }
 
 pub fn load_ec_p521_private_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let der = pem_der(pem_data, "PRIVATE KEY")?;
-    load_private_key_pkcs8_der_for(
-        &der,
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P521),
-    )
+    load_private_key_pkcs8_der_for(&der, riptering::KeyAlgorithm::Ec(riptering::EcCurve::P521))
 }
 
 pub fn load_hmac_key(data: &[u8]) -> Result<Key, Error> {
     Ok(Key::new(
-        KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Hmac, data)?,
+        KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Hmac, data)?,
         KeyUsage::Any,
     ))
 }
@@ -55,7 +46,7 @@ pub fn load_aes_key(data: &[u8]) -> Result<Key, Error> {
         )));
     }
     Ok(Key::new(
-        KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Aes, data)?,
+        KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Aes, data)?,
         KeyUsage::Any,
     ))
 }
@@ -68,7 +59,7 @@ pub fn load_des3_key(data: &[u8]) -> Result<Key, Error> {
         )));
     }
     Ok(Key::new(
-        KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::TripleDes, data)?,
+        KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::TripleDes, data)?,
         KeyUsage::Any,
     ))
 }
@@ -82,7 +73,7 @@ fn load_private_key_pkcs8_der(der: &[u8]) -> Result<Key, Error> {
 
 fn load_private_key_pkcs8_der_for(
     der: &[u8],
-    expected: kryptering::KeyAlgorithm,
+    expected: riptering::KeyAlgorithm,
 ) -> Result<Key, Error> {
     let info = pkcs8::PrivateKeyInfo::from_der(der)
         .map_err(|err| Error::Key(format!("invalid PKCS#8 private key: {err}")))?;
@@ -193,7 +184,7 @@ pub fn load_spki_der(spki_der: &[u8]) -> Result<Key, Error> {
     load_spki_der_for(spki_der, algorithm)
 }
 
-fn load_spki_der_for(der: &[u8], expected: kryptering::KeyAlgorithm) -> Result<Key, Error> {
+fn load_spki_der_for(der: &[u8], expected: riptering::KeyAlgorithm) -> Result<Key, Error> {
     let spki = spki::SubjectPublicKeyInfoRef::from_der(der)
         .map_err(|err| Error::Key(format!("invalid SPKI public key: {err}")))?;
     let actual = key_algorithm(&spki.algorithm)?;
@@ -209,11 +200,11 @@ fn load_spki_der_for(der: &[u8], expected: kryptering::KeyAlgorithm) -> Result<K
 }
 
 pub fn load_ed25519_private_pkcs8_der(der: &[u8]) -> Result<Key, Error> {
-    load_private_key_pkcs8_der_for(der, kryptering::KeyAlgorithm::Ed25519)
+    load_private_key_pkcs8_der_for(der, riptering::KeyAlgorithm::Ed25519)
 }
 
 pub fn load_ed25519_public_spki_der(spki_der: &[u8]) -> Result<Key, Error> {
-    load_spki_der_for(spki_der, kryptering::KeyAlgorithm::Ed25519)
+    load_spki_der_for(spki_der, riptering::KeyAlgorithm::Ed25519)
 }
 
 pub fn load_x25519_private_raw(_private_bytes: &[u8]) -> Result<Key, Error> {
@@ -251,16 +242,16 @@ fn pem_der(pem_data: &[u8], expected_label: &str) -> Result<Vec<u8>, Error> {
 
 fn key_algorithm(
     algorithm: &spki::AlgorithmIdentifierRef<'_>,
-) -> Result<kryptering::KeyAlgorithm, Error> {
+) -> Result<riptering::KeyAlgorithm, Error> {
     let oid = algorithm.oid;
     if oid == der::oid::db::rfc5912::RSA_ENCRYPTION || oid == der::oid::db::rfc5912::ID_RSASSA_PSS {
-        return Ok(kryptering::KeyAlgorithm::Rsa);
+        return Ok(riptering::KeyAlgorithm::Rsa);
     }
     if oid == der::oid::db::rfc5912::ID_DSA {
-        return Ok(kryptering::KeyAlgorithm::Dsa);
+        return Ok(riptering::KeyAlgorithm::Dsa);
     }
     if oid == der::oid::db::rfc8410::ID_ED_25519 {
-        return Ok(kryptering::KeyAlgorithm::Ed25519);
+        return Ok(riptering::KeyAlgorithm::Ed25519);
     }
     if oid == der::oid::db::rfc5912::ID_EC_PUBLIC_KEY {
         let parameters = algorithm
@@ -271,11 +262,11 @@ fn key_algorithm(
             .decode_as()
             .map_err(|err| Error::Key(format!("invalid EC curve parameters: {err}")))?;
         return if curve == der::oid::db::rfc5912::SECP_256_R_1 {
-            Ok(kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P256))
+            Ok(riptering::KeyAlgorithm::Ec(riptering::EcCurve::P256))
         } else if curve == der::oid::db::rfc5912::SECP_384_R_1 {
-            Ok(kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P384))
+            Ok(riptering::KeyAlgorithm::Ec(riptering::EcCurve::P384))
         } else if curve == der::oid::db::rfc5912::SECP_521_R_1 {
-            Ok(kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P521))
+            Ok(riptering::KeyAlgorithm::Ec(riptering::EcCurve::P521))
         } else {
             Err(Error::UnsupportedAlgorithm(format!("EC curve OID {curve}")))
         };

@@ -216,7 +216,7 @@ dependencies = [
  "bergshamra-transforms",
  "bergshamra-xml",
  "clap",
- "kryptering",
+ "riptering",
  "uppsala",
 ]
 
@@ -244,8 +244,8 @@ version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "hex",
- "kryptering",
  "rand",
+ "riptering",
  "rsa",
  "x25519-dalek",
 ]
@@ -262,7 +262,7 @@ dependencies = [
  "bergshamra-transforms",
  "bergshamra-xml",
  "der 0.7.10",
- "kryptering",
+ "riptering",
  "uppsala",
  "x509-cert",
 ]
@@ -278,7 +278,7 @@ dependencies = [
  "bergshamra-keys",
  "bergshamra-transforms",
  "bergshamra-xml",
- "kryptering",
+ "riptering",
  "uppsala",
 ]
 
@@ -295,7 +295,6 @@ dependencies = [
  "dsa",
  "ecdsa",
  "ed25519-dalek",
- "kryptering",
  "ml-dsa",
  "num-bigint-dig",
  "num-traits",
@@ -307,11 +306,12 @@ dependencies = [
  "pkcs8 0.10.2",
  "pkcs8 0.11.0",
  "rand",
+ "riptering",
+ "ritsp-ltv",
  "rsa",
  "signature 2.2.0",
  "slh-dsa",
  "spki 0.7.3",
- "tsp-ltv",
  "uppsala",
  "x25519-dalek",
  "x509-cert",
@@ -324,7 +324,7 @@ version = "0.9.1"
 dependencies = [
  "bergshamra-core",
  "cipher 0.5.2",
- "kryptering",
+ "riptering",
  "yasna",
  "zeroize",
 ]
@@ -1390,52 +1390,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kryptering"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35eb0c42bd90483295061d56a4fbfaeb2dfe817e3e98b3244039cc13ed1fbd15"
-dependencies = [
- "aes 0.9.1",
- "aes-gcm",
- "aes-kw",
- "aws-lc-rs",
- "cbc 0.2.1",
- "crypto-bigint 0.7.5",
- "cryptoki",
- "des 0.9.0",
- "digest 0.10.7",
- "dsa",
- "ecdsa",
- "ed25519-dalek",
- "ed448-goldilocks",
- "generic-array",
- "getrandom 0.4.3",
- "hkdf",
- "hmac 0.12.1",
- "md-5",
- "ml-dsa",
- "ml-kem",
- "p256",
- "p384",
- "p521",
- "pbkdf2",
- "pkcs8 0.10.2",
- "pkcs8 0.11.0",
- "rand",
- "ripemd",
- "rsa",
- "rustls",
- "sha1",
- "sha2 0.10.9",
- "sha3 0.10.9",
- "signature 2.2.0",
- "slh-dsa",
- "thiserror",
- "x25519-dalek",
- "zeroize",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1508,6 +1462,7 @@ dependencies = [
  "pkcs8 0.11.0",
  "shake",
  "signature 3.0.0",
+ "zeroize",
 ]
 
 [[package]]
@@ -1938,6 +1893,72 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd124222d17ad93a644ed9d011a40f4fb64aa54275c08cc216524a9ea82fb09f"
 dependencies = [
  "digest 0.10.7",
+]
+
+[[package]]
+name = "riptering"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58ec7d38741effea26499d8c9f3d0d782e37b2badde0c16e4d4a67e7dece9ca0"
+dependencies = [
+ "aes 0.9.1",
+ "aes-gcm",
+ "aes-kw",
+ "aws-lc-rs",
+ "cbc 0.2.1",
+ "crypto-bigint 0.7.5",
+ "cryptoki",
+ "des 0.9.0",
+ "digest 0.10.7",
+ "dsa",
+ "ecdsa",
+ "ed25519-dalek",
+ "ed448-goldilocks",
+ "generic-array",
+ "getrandom 0.4.3",
+ "hkdf",
+ "hmac 0.12.1",
+ "md-5",
+ "ml-dsa",
+ "ml-kem",
+ "p256",
+ "p384",
+ "p521",
+ "pbkdf2",
+ "pkcs8 0.10.2",
+ "pkcs8 0.11.0",
+ "rand",
+ "ripemd",
+ "rsa",
+ "rustls",
+ "sha1",
+ "sha2 0.10.9",
+ "sha3 0.10.9",
+ "signature 2.2.0",
+ "slh-dsa",
+ "thiserror",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "ritsp-ltv"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31cea033da0795e7f819b244bb124c067ef9516896c19a10b54481ca91e83a19"
+dependencies = [
+ "base64",
+ "chrono",
+ "cms",
+ "const-oid 0.9.6",
+ "der 0.7.10",
+ "hex",
+ "log",
+ "pem-rfc7468",
+ "riptering",
+ "spki 0.7.3",
+ "thiserror",
+ "x509-cert",
 ]
 
 [[package]]
@@ -2383,26 +2404,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "tsp-ltv"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce76d3fd38735dbbbf634c55708fdf0633acfc5c5d906998d25617115ff93bb2"
-dependencies = [
- "base64",
- "chrono",
- "cms",
- "const-oid 0.9.6",
- "der 0.7.10",
- "hex",
- "kryptering",
- "log",
- "pem-rfc7468",
- "spki 0.7.3",
- "thiserror",
- "x509-cert",
 ]
 
 [[package]]

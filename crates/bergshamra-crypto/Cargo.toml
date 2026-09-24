@@ -10,16 +10,16 @@ description = "Cryptographic algorithm implementations for Bergshamra XML Securi
 
 [features]
 default = ["rustcrypto", "legacy-algorithms", "post-quantum"]
-rustcrypto = ["kryptering/rustcrypto"]
-aws-lc = ["kryptering/aws-lc"]
-fips = ["aws-lc", "kryptering/fips"]
-legacy-algorithms = ["kryptering/legacy"]
-post-quantum = ["kryptering/post-quantum"]
-pkcs11 = ["kryptering/pkcs11"]
+rustcrypto = ["riptering/rustcrypto"]
+aws-lc = ["riptering/aws-lc"]
+fips = ["aws-lc", "riptering/fips"]
+legacy-algorithms = ["riptering/legacy"]
+post-quantum = ["riptering/post-quantum"]
+pkcs11 = ["riptering/pkcs11"]
 
 [dependencies]
 bergshamra-core.workspace = true
-kryptering.workspace = true
+riptering.workspace = true
 
 [dev-dependencies]
 hex = "0.4"

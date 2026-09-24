@@ -3,7 +3,7 @@
 //! Digest (hash) algorithm implementations.
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::HashAlgorithm;
+use riptering::HashAlgorithm;
 
 /// Trait for digest algorithms.
 pub trait DigestAlgorithm: Send {
@@ -15,7 +15,7 @@ pub trait DigestAlgorithm: Send {
     fn uri(&self) -> &'static str;
 }
 
-/// Map an XML algorithm URI to a `kryptering::HashAlgorithm`.
+/// Map an XML algorithm URI to a `riptering::HashAlgorithm`.
 fn uri_to_hash(uri: &str) -> Result<HashAlgorithm, Error> {
     match uri {
         algorithm::SHA1 => Ok(HashAlgorithm::Sha1),
@@ -37,7 +37,7 @@ fn uri_to_hash(uri: &str) -> Result<HashAlgorithm, Error> {
     }
 }
 
-/// Map a `kryptering::HashAlgorithm` back to an XML algorithm URI.
+/// Map a `riptering::HashAlgorithm` back to an XML algorithm URI.
 fn hash_to_uri(algo: HashAlgorithm) -> &'static str {
     match algo {
         HashAlgorithm::Sha1 => algorithm::SHA1,
@@ -53,7 +53,7 @@ fn hash_to_uri(algo: HashAlgorithm) -> &'static str {
         HashAlgorithm::Md5 => algorithm::MD5,
         #[cfg(feature = "legacy-algorithms")]
         HashAlgorithm::Ripemd160 => algorithm::RIPEMD160,
-        // Catch variants enabled by kryptering features not matched above.
+        // Catch variants enabled by riptering features not matched above.
         #[allow(unreachable_patterns)]
         _ => "unsupported",
     }
@@ -62,8 +62,8 @@ fn hash_to_uri(algo: HashAlgorithm) -> &'static str {
 /// Create a digest algorithm from its URI.
 pub fn from_uri(uri: &str) -> Result<Box<dyn DigestAlgorithm>, Error> {
     let algo = uri_to_hash(uri)?;
-    let inner = kryptering::digest::new_digest(algo).map_err(crate::map_kryptering_err)?;
-    Ok(Box::new(KrypteringDigest {
+    let inner = riptering::digest::new_digest(algo).map_err(crate::map_riptering_err)?;
+    Ok(Box::new(RipteringDigest {
         uri: hash_to_uri(algo),
         inner,
     }))
@@ -72,23 +72,23 @@ pub fn from_uri(uri: &str) -> Result<Box<dyn DigestAlgorithm>, Error> {
 /// Compute a digest in one shot.
 pub fn digest(uri: &str, data: &[u8]) -> Result<Vec<u8>, Error> {
     let algo = uri_to_hash(uri)?;
-    kryptering::digest::digest(algo, data).map_err(crate::map_kryptering_err)
+    riptering::digest::digest(algo, data).map_err(crate::map_riptering_err)
 }
 
-// ── Wrapper that delegates to kryptering ────────────────────────────
+// ── Wrapper that delegates to riptering ────────────────────────────
 
-struct KrypteringDigest {
+struct RipteringDigest {
     uri: &'static str,
-    inner: Box<dyn kryptering::digest::DigestStream>,
+    inner: Box<dyn riptering::digest::DigestStream>,
 }
 
-impl DigestAlgorithm for KrypteringDigest {
+impl DigestAlgorithm for RipteringDigest {
     fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
 
     fn finalize(self: Box<Self>) -> Result<Vec<u8>, Error> {
-        self.inner.finalize().map_err(crate::map_kryptering_err)
+        self.inner.finalize().map_err(crate::map_riptering_err)
     }
 
     fn uri(&self) -> &'static str {

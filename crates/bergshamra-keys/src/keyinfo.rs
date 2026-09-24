@@ -542,7 +542,7 @@ pub fn parse_rsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result
         &rsa_public,
     )?;
     Ok(Key::new(
-        KeyData::from_spki_der(kryptering::KeyAlgorithm::Rsa, &spki)?,
+        KeyData::from_spki_der(riptering::KeyAlgorithm::Rsa, &spki)?,
         KeyUsage::Verify,
     ))
 }
@@ -599,7 +599,7 @@ pub fn parse_dsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result
     let public_der = der_positive_integer(&y_bytes)?;
     let spki = encode_spki(der::oid::db::rfc5912::ID_DSA, Some(params), &public_der)?;
     Ok(Key::new(
-        KeyData::from_spki_der(kryptering::KeyAlgorithm::Dsa, &spki)?,
+        KeyData::from_spki_der(riptering::KeyAlgorithm::Dsa, &spki)?,
         KeyUsage::Verify,
     ))
 }
@@ -662,17 +662,17 @@ pub fn parse_ec_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result<
     let (curve_oid, curve, expected_len) = match &*curve_uri {
         "urn:oid:1.2.840.10045.3.1.7" => (
             der::oid::db::rfc5912::SECP_256_R_1,
-            kryptering::EcCurve::P256,
+            riptering::EcCurve::P256,
             65,
         ),
         "urn:oid:1.3.132.0.34" => (
             der::oid::db::rfc5912::SECP_384_R_1,
-            kryptering::EcCurve::P384,
+            riptering::EcCurve::P384,
             97,
         ),
         "urn:oid:1.3.132.0.35" => (
             der::oid::db::rfc5912::SECP_521_R_1,
-            kryptering::EcCurve::P521,
+            riptering::EcCurve::P521,
             133,
         ),
         _ => {
@@ -698,7 +698,7 @@ pub fn parse_ec_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result<
         &point_bytes,
     )?;
     Ok(Key::new(
-        KeyData::from_spki_der(kryptering::KeyAlgorithm::Ec(curve), &spki)?,
+        KeyData::from_spki_der(riptering::KeyAlgorithm::Ec(curve), &spki)?,
         KeyUsage::Verify,
     ))
 }

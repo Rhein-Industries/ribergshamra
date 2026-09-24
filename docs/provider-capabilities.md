@@ -1,6 +1,7 @@
 # Provider capabilities
 
-Bergshamra 0.8.0 routes document cryptography through Kryptering 0.5. This
+Bergshamra routes document cryptography through riptering 0.6, Rhein
+Industries' maintained fork of Kryptering 0.5 (the provider since 0.8.0). This
 table is the expected-support manifest for the provider matrix; tests must
 either exercise a row or assert the corresponding deterministic unsupported
 error.

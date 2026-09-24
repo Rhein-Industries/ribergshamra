@@ -2,10 +2,10 @@
 #
 # Each entry documents *why* the advisory is ignored, what the upstream
 # fix looks like, and who has to move for bergshamra to drop the entry.
-# This file mirrors kryptering's .cargo/audit.toml — we carry the same
-# three ignores because the same transitive crates (rsa 0.9, cryptoki
-# 0.7 via paste 1.0, rand 0.8 via num-bigint-dig) flow through both
-# dependency trees.
+# This file started as a mirror of kryptering's .cargo/audit.toml (now
+# riptering's, Rhein Industries' maintained fork of kryptering) — we carry
+# ignores for the same transitive crates (rsa 0.9, rand 0.8 via
+# num-bigint-dig) that flow through both dependency trees.
 
 [advisories]
 ignore = [
@@ -14,7 +14,7 @@ ignore = [
     # line; RustCrypto's rewrite lands in rsa 0.10, which is not yet
     # released. Bergshamra's threat model for XML-DSig / XML-Enc users
     # who need timing-side-channel resistance should route RSA private
-    # operations through an HSM via kryptering::pkcs11 rather than
+    # operations through an HSM via riptering::pkcs11 rather than
     # relying on the software path.
     # Upstream: https://github.com/RustCrypto/RSA/issues/19
     "RUSTSEC-2023-0071",

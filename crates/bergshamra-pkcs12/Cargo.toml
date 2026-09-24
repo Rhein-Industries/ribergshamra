@@ -10,14 +10,14 @@ description = "PKCS#12 parser for Bergshamra XML Security library"
 
 [features]
 default = ["rustcrypto", "legacy-algorithms"]
-rustcrypto = ["kryptering/rustcrypto"]
-aws-lc = ["kryptering/aws-lc"]
-fips = ["aws-lc", "kryptering/fips"]
-legacy-algorithms = ["kryptering/legacy"]
+rustcrypto = ["riptering/rustcrypto"]
+aws-lc = ["riptering/aws-lc"]
+fips = ["aws-lc", "riptering/fips"]
+legacy-algorithms = ["riptering/legacy"]
 
 [dependencies]
 bergshamra-core.workspace = true
-kryptering.workspace = true
+riptering.workspace = true
 zeroize.workspace = true
 yasna.workspace = true
 cipher = { version = "0.5", features = ["block-padding", "alloc"] }

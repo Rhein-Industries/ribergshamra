@@ -3,7 +3,7 @@
 //! Key Derivation Functions: ConcatKDF (NIST SP 800-56A), PBKDF2, and HKDF (RFC 5869).
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::algorithm::HashAlgorithm;
+use riptering::algorithm::HashAlgorithm;
 
 /// ConcatKDF parameters from XML.
 #[derive(Debug, Clone, Default)]
@@ -45,7 +45,7 @@ pub struct HkdfParams {
     pub key_length_bits: u32,
 }
 
-/// Map an XML digest URI to `kryptering::HashAlgorithm`.
+/// Map an XML digest URI to `riptering::HashAlgorithm`.
 fn digest_uri_to_hash(uri: &str) -> Result<HashAlgorithm, Error> {
     match uri {
         algorithm::SHA1 => Ok(HashAlgorithm::Sha1),
@@ -63,7 +63,7 @@ fn digest_uri_to_hash(uri: &str) -> Result<HashAlgorithm, Error> {
     }
 }
 
-/// Map an XML HMAC PRF URI to `kryptering::HashAlgorithm`.
+/// Map an XML HMAC PRF URI to `riptering::HashAlgorithm`.
 fn prf_uri_to_hash(uri: &str) -> Result<HashAlgorithm, Error> {
     match uri {
         algorithm::HMAC_SHA1 => Ok(HashAlgorithm::Sha1),
@@ -85,15 +85,14 @@ pub fn concat_kdf(
     let hash = digest_uri_to_hash(digest_uri)
         .map_err(|_| Error::UnsupportedAlgorithm(format!("ConcatKDF digest: {digest_uri}")))?;
 
-    let k_params = kryptering::kdf::ConcatKdfParams {
+    let k_params = riptering::kdf::ConcatKdfParams {
         hash,
         algorithm_id: params.algorithm_id.clone(),
         party_u_info: params.party_u_info.clone(),
         party_v_info: params.party_v_info.clone(),
     };
 
-    kryptering::kdf::concat_kdf(shared_secret, key_len, &k_params)
-        .map_err(crate::map_kryptering_err)
+    riptering::kdf::concat_kdf(shared_secret, key_len, &k_params).map_err(crate::map_riptering_err)
 }
 
 /// Derive a key using PBKDF2 (RFC 8018).
@@ -101,14 +100,14 @@ pub fn pbkdf2_derive(password: &[u8], params: &Pbkdf2Params) -> Result<Vec<u8>, 
     let hash = prf_uri_to_hash(&params.prf_uri)
         .map_err(|_| Error::UnsupportedAlgorithm(format!("PBKDF2 PRF: {}", params.prf_uri)))?;
 
-    let k_params = kryptering::kdf::Pbkdf2Params {
+    let k_params = riptering::kdf::Pbkdf2Params {
         hash,
         salt: params.salt.clone(),
         iteration_count: params.iteration_count,
         key_length: params.key_length,
     };
 
-    kryptering::kdf::pbkdf2_derive(password, &k_params).map_err(crate::map_kryptering_err)
+    riptering::kdf::pbkdf2_derive(password, &k_params).map_err(crate::map_riptering_err)
 }
 
 /// Derive a key using HKDF (RFC 5869: Extract-then-Expand).
@@ -121,15 +120,14 @@ pub fn hkdf_derive(
     let hash = prf_uri_to_hash(prf_uri)
         .map_err(|_| Error::UnsupportedAlgorithm(format!("HKDF PRF: {prf_uri}")))?;
 
-    let k_params = kryptering::kdf::HkdfParams {
+    let k_params = riptering::kdf::HkdfParams {
         hash,
         salt: params.salt.clone(),
         info: params.info.clone(),
         key_length_bits: params.key_length_bits,
     };
 
-    kryptering::kdf::hkdf_derive(shared_secret, key_len, &k_params)
-        .map_err(crate::map_kryptering_err)
+    riptering::kdf::hkdf_derive(shared_secret, key_len, &k_params).map_err(crate::map_riptering_err)
 }
 
 #[cfg(test)]

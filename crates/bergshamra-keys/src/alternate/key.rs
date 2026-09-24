@@ -20,7 +20,7 @@ pub enum KeyUsage {
 #[allow(dead_code)]
 #[derive(Clone)]
 struct DhMaterial {
-    key: kryptering::SoftwareKey,
+    key: riptering::SoftwareKey,
     p: Vec<u8>,
     g: Vec<u8>,
     q: Option<Vec<u8>>,
@@ -31,7 +31,7 @@ struct DhMaterial {
 #[derive(Clone)]
 enum Material {
     Software {
-        key: kryptering::SoftwareKey,
+        key: riptering::SoftwareKey,
         spki: Option<Vec<u8>>,
         raw_public: Option<Vec<u8>>,
         symmetric: Option<Zeroizing<Vec<u8>>>,
@@ -54,8 +54,8 @@ impl std::fmt::Debug for KeyData {
     }
 }
 
-impl From<kryptering::SoftwareKey> for KeyData {
-    fn from(key: kryptering::SoftwareKey) -> Self {
+impl From<riptering::SoftwareKey> for KeyData {
+    fn from(key: riptering::SoftwareKey) -> Self {
         let component = key.public_component().ok();
         let (spki, raw_public) = classify_public(key.algorithm(), component);
         Self(Arc::new(Material::Software {
@@ -68,25 +68,25 @@ impl From<kryptering::SoftwareKey> for KeyData {
 }
 
 impl KeyData {
-    pub fn from_software_key(key: kryptering::SoftwareKey) -> Self {
+    pub fn from_software_key(key: riptering::SoftwareKey) -> Self {
         key.into()
     }
 
     pub fn from_pkcs8_der(
-        algorithm: kryptering::KeyAlgorithm,
+        algorithm: riptering::KeyAlgorithm,
         der: &[u8],
     ) -> Result<Self, bergshamra_core::Error> {
-        kryptering::SoftwareKey::from_pkcs8_der(algorithm, der)
+        riptering::SoftwareKey::from_pkcs8_der(algorithm, der)
             .map(Self::from)
-            .map_err(map_kryptering_error)
+            .map_err(map_riptering_error)
     }
 
     pub fn from_spki_der(
-        algorithm: kryptering::KeyAlgorithm,
+        algorithm: riptering::KeyAlgorithm,
         der: &[u8],
     ) -> Result<Self, bergshamra_core::Error> {
         let key =
-            kryptering::SoftwareKey::from_spki_der(algorithm, der).map_err(map_kryptering_error)?;
+            riptering::SoftwareKey::from_spki_der(algorithm, der).map_err(map_riptering_error)?;
         let raw_public = spki_public_bytes(der).map(<[u8]>::to_vec);
         Ok(Self(Arc::new(Material::Software {
             key,
@@ -97,11 +97,11 @@ impl KeyData {
     }
 
     pub fn from_symmetric_bytes(
-        algorithm: kryptering::KeyAlgorithm,
+        algorithm: riptering::KeyAlgorithm,
         bytes: &[u8],
     ) -> Result<Self, bergshamra_core::Error> {
-        let key = kryptering::SoftwareKey::from_symmetric_bytes(algorithm, bytes)
-            .map_err(map_kryptering_error)?;
+        let key = riptering::SoftwareKey::from_symmetric_bytes(algorithm, bytes)
+            .map_err(map_riptering_error)?;
         Ok(Self(Arc::new(Material::Software {
             key,
             spki: None,
@@ -115,7 +115,7 @@ impl KeyData {
         public: &[u8],
     ) -> Result<Self, bergshamra_core::Error> {
         let key =
-            kryptering::SoftwareKey::from_x25519(private, public).map_err(map_kryptering_error)?;
+            riptering::SoftwareKey::from_x25519(private, public).map_err(map_riptering_error)?;
         Ok(Self(Arc::new(Material::Software {
             key,
             spki: None,
@@ -132,8 +132,8 @@ impl KeyData {
         private: Option<&[u8]>,
         public: &[u8],
     ) -> Result<Self, bergshamra_core::Error> {
-        let key = kryptering::SoftwareKey::from_dh_parameters(p, g, q, private, public)
-            .map_err(map_kryptering_error)?;
+        let key = riptering::SoftwareKey::from_dh_parameters(p, g, q, private, public)
+            .map_err(map_riptering_error)?;
         Ok(Self(Arc::new(Material::Dh(DhMaterial {
             key,
             p: p.to_vec(),
@@ -144,10 +144,10 @@ impl KeyData {
         }))))
     }
 
-    pub fn algorithm(&self) -> kryptering::KeyAlgorithm {
+    pub fn algorithm(&self) -> riptering::KeyAlgorithm {
         match self.0.as_ref() {
             Material::Software { key, .. } => key.algorithm(),
-            Material::Dh(_) => kryptering::KeyAlgorithm::Dh,
+            Material::Dh(_) => riptering::KeyAlgorithm::Dh,
         }
     }
 
@@ -172,15 +172,15 @@ impl KeyData {
                 raw_public,
                 ..
             } => match key.algorithm() {
-                kryptering::KeyAlgorithm::Rsa => rsa_key_value(spki.as_deref()?, prefix),
-                kryptering::KeyAlgorithm::Ec(curve) => {
+                riptering::KeyAlgorithm::Rsa => rsa_key_value(spki.as_deref()?, prefix),
+                riptering::KeyAlgorithm::Ec(curve) => {
                     ec_key_value(raw_public.as_deref()?, curve_uri(curve))
                 }
-                kryptering::KeyAlgorithm::X25519 => ec_key_value(
+                riptering::KeyAlgorithm::X25519 => ec_key_value(
                     raw_public.as_deref()?,
                     "urn:ietf:params:xml:ns:keyprov:curve:x25519",
                 ),
-                kryptering::KeyAlgorithm::Dsa => dsa_key_value(spki.as_deref()?, prefix),
+                riptering::KeyAlgorithm::Dsa => dsa_key_value(spki.as_deref()?, prefix),
                 _ => None,
             },
             Material::Dh(dh) => Some(dh_key_value(dh)),
@@ -194,7 +194,7 @@ impl KeyData {
         }
     }
 
-    pub fn software_key(&self) -> Result<Option<kryptering::SoftwareKey>, bergshamra_core::Error> {
+    pub fn software_key(&self) -> Result<Option<riptering::SoftwareKey>, bergshamra_core::Error> {
         Ok(match self.0.as_ref() {
             Material::Software { key, .. } => Some(key.clone()),
             Material::Dh(dh) => Some(dh.key.clone()),
@@ -205,12 +205,12 @@ impl KeyData {
         self.software_key()?
             .ok_or_else(|| bergshamra_core::Error::Key("key has no provider handle".into()))?
             .export_spki_der()
-            .map_err(map_kryptering_error)
+            .map_err(map_riptering_error)
     }
 
     pub fn export_private(&self) -> Result<Zeroizing<Vec<u8>>, bergshamra_core::Error> {
         match self.0.as_ref() {
-            Material::Software { key, .. } => key.export_private().map_err(map_kryptering_error),
+            Material::Software { key, .. } => key.export_private().map_err(map_riptering_error),
             Material::Dh(dh) => dh
                 .private
                 .as_ref()
@@ -285,9 +285,7 @@ impl Key {
 
     /// Return provider-neutral public finite-field DH parameters without
     /// exposing the private exponent.
-    pub fn dh_parameters(
-        &self,
-    ) -> Result<Option<kryptering::DhParameters>, bergshamra_core::Error> {
+    pub fn dh_parameters(&self) -> Result<Option<riptering::DhParameters>, bergshamra_core::Error> {
         Ok(self
             .software_key()?
             .and_then(|key| key.dh_parameters().cloned()))
@@ -297,18 +295,18 @@ impl Key {
         match self.data.0.as_ref() {
             Material::Software {
                 key, raw_public, ..
-            } if matches!(key.algorithm(), kryptering::KeyAlgorithm::Ec(_)) => raw_public.clone(),
+            } if matches!(key.algorithm(), riptering::KeyAlgorithm::Ec(_)) => raw_public.clone(),
             _ => None,
         }
     }
 }
 
 fn classify_public(
-    algorithm: kryptering::KeyAlgorithm,
+    algorithm: riptering::KeyAlgorithm,
     component: Option<Vec<u8>>,
 ) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
     match (algorithm, component) {
-        (kryptering::KeyAlgorithm::X25519, component) => (None, component),
+        (riptering::KeyAlgorithm::X25519, component) => (None, component),
         (_, Some(spki)) => {
             let raw = spki_public_bytes(&spki).map(<[u8]>::to_vec);
             (Some(spki), raw)
@@ -454,39 +452,39 @@ fn read_tlv(input: &[u8], tag: u8) -> Option<(&[u8], &[u8])> {
     Some((input.get(end..)?, input.get(header..end)?))
 }
 
-fn curve_uri(curve: kryptering::EcCurve) -> &'static str {
+fn curve_uri(curve: riptering::EcCurve) -> &'static str {
     match curve {
-        kryptering::EcCurve::P256 => "urn:oid:1.2.840.10045.3.1.7",
-        kryptering::EcCurve::P384 => "urn:oid:1.3.132.0.34",
-        kryptering::EcCurve::P521 => "urn:oid:1.3.132.0.35",
+        riptering::EcCurve::P256 => "urn:oid:1.2.840.10045.3.1.7",
+        riptering::EcCurve::P384 => "urn:oid:1.3.132.0.34",
+        riptering::EcCurve::P521 => "urn:oid:1.3.132.0.35",
     }
 }
 
-fn algorithm_name(algorithm: kryptering::KeyAlgorithm) -> &'static str {
+fn algorithm_name(algorithm: riptering::KeyAlgorithm) -> &'static str {
     match algorithm {
-        kryptering::KeyAlgorithm::Rsa => "RSA",
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P256) => "EC-P256",
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P384) => "EC-P384",
-        kryptering::KeyAlgorithm::Ec(kryptering::EcCurve::P521) => "EC-P521",
-        kryptering::KeyAlgorithm::Ed25519 => "Ed25519",
-        kryptering::KeyAlgorithm::X25519 => "X25519",
-        kryptering::KeyAlgorithm::Hmac => "HMAC",
-        kryptering::KeyAlgorithm::Aes => "AES",
-        kryptering::KeyAlgorithm::Dh => "DH",
-        kryptering::KeyAlgorithm::Dsa => "DSA",
-        kryptering::KeyAlgorithm::TripleDes => "3DES",
+        riptering::KeyAlgorithm::Rsa => "RSA",
+        riptering::KeyAlgorithm::Ec(riptering::EcCurve::P256) => "EC-P256",
+        riptering::KeyAlgorithm::Ec(riptering::EcCurve::P384) => "EC-P384",
+        riptering::KeyAlgorithm::Ec(riptering::EcCurve::P521) => "EC-P521",
+        riptering::KeyAlgorithm::Ed25519 => "Ed25519",
+        riptering::KeyAlgorithm::X25519 => "X25519",
+        riptering::KeyAlgorithm::Hmac => "HMAC",
+        riptering::KeyAlgorithm::Aes => "AES",
+        riptering::KeyAlgorithm::Dh => "DH",
+        riptering::KeyAlgorithm::Dsa => "DSA",
+        riptering::KeyAlgorithm::TripleDes => "3DES",
         #[cfg(feature = "post-quantum")]
-        kryptering::KeyAlgorithm::PostQuantum(algorithm) => algorithm.name(),
+        riptering::KeyAlgorithm::PostQuantum(algorithm) => algorithm.name(),
         #[allow(unreachable_patterns)]
         _ => "unsupported",
     }
 }
 
-fn map_kryptering_error(error: kryptering::Error) -> bergshamra_core::Error {
+fn map_riptering_error(error: riptering::Error) -> bergshamra_core::Error {
     match error {
-        kryptering::Error::Key(message) => bergshamra_core::Error::Key(message),
-        kryptering::Error::Crypto(message) => bergshamra_core::Error::Crypto(message),
-        error @ kryptering::Error::UnsupportedAlgorithm { .. } => {
+        riptering::Error::Key(message) => bergshamra_core::Error::Key(message),
+        riptering::Error::Crypto(message) => bergshamra_core::Error::Crypto(message),
+        error @ riptering::Error::UnsupportedAlgorithm { .. } => {
             bergshamra_core::Error::UnsupportedAlgorithm(error.to_string())
         }
         error => bergshamra_core::Error::Crypto(error.to_string()),

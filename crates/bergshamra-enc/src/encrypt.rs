@@ -163,7 +163,7 @@ fn generate_session_key(enc_uri: &str) -> Result<Vec<u8>, Error> {
         }
     };
 
-    kryptering::random_bytes(key_size).map_err(map_kryptering_err)
+    riptering::random_bytes(key_size).map_err(map_riptering_err)
 }
 
 /// Encrypt the session key into any EncryptedKey elements in the template.
@@ -227,7 +227,7 @@ fn encrypt_session_key(
                     ctx.ensure_hsm_encryptor_matches(enc_uri)?;
                     hsm_encryptor
                         .encrypt(session_key)
-                        .map_err(map_kryptering_err)?
+                        .map_err(map_riptering_err)?
                 } else {
                     // Software path
                     let oaep_params = read_oaep_params(&doc, enc_method_id);
@@ -245,7 +245,7 @@ fn encrypt_session_key(
             algorithm::KW_AES128 | algorithm::KW_AES192 | algorithm::KW_AES256 => {
                 if let Some(ref hsm_wrapper) = ctx.hsm_key_wrapper {
                     ctx.ensure_hsm_key_wrapper_matches(enc_uri)?;
-                    hsm_wrapper.wrap(session_key).map_err(map_kryptering_err)?
+                    hsm_wrapper.wrap(session_key).map_err(map_riptering_err)?
                 } else {
                     // Software path
                     let kw = bergshamra_crypto::keywrap::from_uri(enc_uri)?;
@@ -383,7 +383,7 @@ fn resolve_encrypted_key_rsa<'a>(
             let name = name.trim();
             if !name.is_empty() {
                 if let Some(key) = ctx.keys_manager.find_by_name(name) {
-                    if key.data.algorithm() == kryptering::KeyAlgorithm::Rsa {
+                    if key.data.algorithm() == riptering::KeyAlgorithm::Rsa {
                         return Ok(key);
                     }
                 }
@@ -440,7 +440,7 @@ fn resolve_agreement_method_encrypt(
                 .ok_or_else(|| Error::Key("recipient key has no EC public key bytes".into()))?;
 
             let curve = match originator_key.data.algorithm() {
-                kryptering::KeyAlgorithm::Ec(curve) if originator_key.has_private_key() => curve,
+                riptering::KeyAlgorithm::Ec(curve) if originator_key.has_private_key() => curve,
                 _ => {
                     return Err(Error::Key("originator key is not an EC private key".into()));
                 }
@@ -553,9 +553,7 @@ fn resolve_originator_key<'a>(
         .ok_or_else(|| Error::Key("no private key for key agreement originator".into()))
 }
 
-fn required_software_key(
-    key: &bergshamra_keys::key::Key,
-) -> Result<kryptering::SoftwareKey, Error> {
+fn required_software_key(key: &bergshamra_keys::key::Key) -> Result<riptering::SoftwareKey, Error> {
     key.software_key()?.ok_or_else(|| {
         Error::Key(format!(
             "{} key has no software representation",
@@ -731,15 +729,15 @@ fn find_child_element(
     None
 }
 
-/// Convert a `kryptering::Error` to a `bergshamra_core::Error`.
-fn map_kryptering_err(e: kryptering::Error) -> Error {
+/// Convert a `riptering::Error` to a `bergshamra_core::Error`.
+fn map_riptering_err(e: riptering::Error) -> Error {
     match e {
-        kryptering::Error::Crypto(s) => Error::Crypto(s),
-        err @ kryptering::Error::UnsupportedAlgorithm { .. } => {
+        riptering::Error::Crypto(s) => Error::Crypto(s),
+        err @ riptering::Error::UnsupportedAlgorithm { .. } => {
             Error::UnsupportedAlgorithm(err.to_string())
         }
-        kryptering::Error::Key(s) => Error::Key(s),
-        kryptering::Error::Io(e) => Error::Io(e),
+        riptering::Error::Key(s) => Error::Key(s),
+        riptering::Error::Io(e) => Error::Io(e),
         #[allow(unreachable_patterns)]
         other => Error::Crypto(other.to_string()),
     }

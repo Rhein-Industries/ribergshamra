@@ -89,8 +89,10 @@ memchr = "2"
 # Benchmarking (dev-only)
 criterion = "0.5"
 
-# Shared crypto backend
-kryptering = { version = "0.5.0", default-features = false }
+# Shared crypto backend: riptering, Rhein Industries' maintained fork of
+# kryptering. Features are forwarded by the member crates under the same names.
+riptering = { version = "0.6", default-features = false }
 
-# Shared trust/validation infrastructure
-tsp-ltv = { version = "0.4", default-features = false }
+# Shared trust/validation infrastructure: ritsp-ltv, Rhein Industries'
+# maintained fork of tsp-ltv (built on riptering).
+ritsp-ltv = { version = "0.5", default-features = false }

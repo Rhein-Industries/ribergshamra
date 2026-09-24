@@ -3,7 +3,7 @@
 //! Key wrap algorithms (AES-KW per RFC 3394, 3DES-KW per RFC 3217).
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::algorithm::{AesKeySize, KeyWrapAlgorithm as KKeyWrapAlgorithm};
+use riptering::algorithm::{AesKeySize, KeyWrapAlgorithm as KKeyWrapAlgorithm};
 
 /// Trait for key wrap algorithms.
 pub trait KeyWrapAlgorithm: Send {
@@ -20,7 +20,7 @@ pub trait KeyWrapAlgorithm: Send {
     fn kek_size(&self) -> usize;
 }
 
-/// Map an XML algorithm URI to a `kryptering::KeyWrapAlgorithm`.
+/// Map an XML algorithm URI to a `riptering::KeyWrapAlgorithm`.
 fn uri_to_keywrap(uri: &str) -> Result<(KKeyWrapAlgorithm, &'static str), Error> {
     match uri {
         algorithm::KW_AES128 => Ok((
@@ -48,20 +48,20 @@ fn uri_to_keywrap(uri: &str) -> Result<(KKeyWrapAlgorithm, &'static str), Error>
 /// Create a key wrap algorithm from its URI.
 pub fn from_uri(uri: &str) -> Result<Box<dyn KeyWrapAlgorithm>, Error> {
     let (algo, static_uri) = uri_to_keywrap(uri)?;
-    Ok(Box::new(KrypteringKeyWrap {
+    Ok(Box::new(RipteringKeyWrap {
         algo,
         uri: static_uri,
     }))
 }
 
-// ── Wrapper that delegates to kryptering ────────────────────────────
+// ── Wrapper that delegates to riptering ────────────────────────────
 
-struct KrypteringKeyWrap {
+struct RipteringKeyWrap {
     algo: KKeyWrapAlgorithm,
     uri: &'static str,
 }
 
-impl KeyWrapAlgorithm for KrypteringKeyWrap {
+impl KeyWrapAlgorithm for RipteringKeyWrap {
     fn uri(&self) -> &'static str {
         self.uri
     }
@@ -71,11 +71,11 @@ impl KeyWrapAlgorithm for KrypteringKeyWrap {
     }
 
     fn wrap(&self, kek: &[u8], key_data: &[u8]) -> Result<Vec<u8>, Error> {
-        kryptering::keywrap::wrap(self.algo, kek, key_data).map_err(crate::map_kryptering_err)
+        riptering::keywrap::wrap(self.algo, kek, key_data).map_err(crate::map_riptering_err)
     }
 
     fn unwrap(&self, kek: &[u8], wrapped: &[u8]) -> Result<Vec<u8>, Error> {
-        kryptering::keywrap::unwrap(self.algo, kek, wrapped).map_err(crate::map_kryptering_err)
+        riptering::keywrap::unwrap(self.algo, kek, wrapped).map_err(crate::map_riptering_err)
     }
 }
 

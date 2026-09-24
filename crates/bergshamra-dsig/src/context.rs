@@ -4,7 +4,7 @@
 
 use bergshamra_core::Error;
 use bergshamra_keys::KeysManager;
-use kryptering::traits::{Signer, Verifier};
+use riptering::traits::{Signer, Verifier};
 
 /// Context for XML-DSig operations.
 pub struct DsigContext {
@@ -275,9 +275,9 @@ impl DsigContext {
     /// Set an HSM-backed signer (builder style).
     ///
     /// When set, signing operations bypass the `KeysManager` and delegate
-    /// to the provided [`kryptering::Signer`] implementation. Key material
+    /// to the provided [`riptering::Signer`] implementation. Key material
     /// never leaves the HSM.
-    pub fn with_hsm_signer(mut self, signer: Box<dyn kryptering::Signer>) -> Self {
+    pub fn with_hsm_signer(mut self, signer: Box<dyn riptering::Signer>) -> Self {
         self.hsm_signer = Some(signer);
         self
     }
@@ -285,8 +285,8 @@ impl DsigContext {
     /// Set an HSM-backed verifier (builder style).
     ///
     /// When set, signature verification bypasses the `KeysManager` and
-    /// delegates to the provided [`kryptering::Verifier`] implementation.
-    pub fn with_hsm_verifier(mut self, verifier: Box<dyn kryptering::Verifier>) -> Self {
+    /// delegates to the provided [`riptering::Verifier`] implementation.
+    pub fn with_hsm_verifier(mut self, verifier: Box<dyn riptering::Verifier>) -> Self {
         self.hsm_verifier = Some(verifier);
         self
     }

@@ -990,13 +990,13 @@ fn generate_session_key(spec: &str) -> Result<Key, Error> {
     }
     let byte_len = bits / 8;
     let key_bytes =
-        kryptering::random_bytes(byte_len).map_err(|err| Error::Crypto(err.to_string()))?;
+        riptering::random_bytes(byte_len).map_err(|err| Error::Crypto(err.to_string()))?;
 
     let key_data = match key_type {
-        "hmac" => KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Hmac, &key_bytes)?,
-        "aes" => KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Aes, &key_bytes)?,
+        "hmac" => KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Hmac, &key_bytes)?,
+        "aes" => KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Aes, &key_bytes)?,
         "des" | "des3" | "tripledes" => {
-            KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::TripleDes, &key_bytes)?
+            KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::TripleDes, &key_bytes)?
         }
         _ => {
             return Err(Error::Other(format!(
@@ -1048,7 +1048,7 @@ fn build_keys_manager(
                                 .map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
                             Key::new(
                                 KeyData::from_symmetric_bytes(
-                                    kryptering::KeyAlgorithm::Hmac,
+                                    riptering::KeyAlgorithm::Hmac,
                                     &bytes,
                                 )?,
                                 KeyUsage::Any,
@@ -1059,7 +1059,7 @@ fn build_keys_manager(
                                 .map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
                             Key::new(
                                 KeyData::from_symmetric_bytes(
-                                    kryptering::KeyAlgorithm::Aes,
+                                    riptering::KeyAlgorithm::Aes,
                                     &bytes,
                                 )?,
                                 KeyUsage::Any,
@@ -1113,7 +1113,7 @@ fn build_keys_manager(
         let bytes =
             std::fs::read(&path).map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
         let mut key = Key::new(
-            KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Hmac, &bytes)?,
+            KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Hmac, &bytes)?,
             KeyUsage::Any,
         );
         key.name = name;
@@ -1125,7 +1125,7 @@ fn build_keys_manager(
         let bytes =
             std::fs::read(&path).map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
         let key = Key::new(
-            KeyData::from_symmetric_bytes(kryptering::KeyAlgorithm::Aes, &bytes)?,
+            KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Aes, &bytes)?,
             KeyUsage::Any,
         );
         mgr.add_key(key);

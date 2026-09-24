@@ -4,7 +4,7 @@
 **Date:** 2026-04-23
 **Deciders:** Kushal Das
 **Supersedes:** —
-**Related:** sibling ADR in `kryptering/docs/adr/0001-rng-choice.md`
+**Related:** sibling ADR in `riptering/docs/adr/0001-rng-choice.md` (inherited from kryptering)
 
 ---
 
@@ -232,4 +232,4 @@ RNG choice fits the same pattern.
 - `rand_core 0.10` — `TryCryptoRng`, `UnwrapErr`
 - `rand_core 0.6` — `CryptoRngCore`
 - RustCrypto trait-migration tracking: <https://github.com/RustCrypto/traits/issues/1596>
-- Sibling ADR in the `kryptering` crate: `kryptering/docs/adr/0001-rng-choice.md`
+- Sibling ADR in the `riptering` crate (inherited from kryptering): `riptering/docs/adr/0001-rng-choice.md`

@@ -11,10 +11,10 @@ description = "Key management for Bergshamra XML Security library"
 [features]
 default = ["rustcrypto", "legacy-algorithms", "post-quantum", "pkcs11"]
 rustcrypto = [
-    "kryptering/rustcrypto",
+    "riptering/rustcrypto",
     "bergshamra-crypto/rustcrypto",
     "bergshamra-pkcs12/rustcrypto",
-    "tsp-ltv/rustcrypto",
+    "ritsp-ltv/rustcrypto",
     "dep:ed25519-dalek",
     "dep:x25519-dalek",
     "dep:rsa",
@@ -39,26 +39,26 @@ rustcrypto = [
     "pkcs8/3des",
     "pkcs8/sha1-insecure",
 ]
-aws-lc = ["kryptering/aws-lc", "bergshamra-crypto/aws-lc", "bergshamra-pkcs12/aws-lc", "tsp-ltv/aws-lc"]
-fips = ["aws-lc", "kryptering/fips", "bergshamra-crypto/fips", "bergshamra-pkcs12/fips", "tsp-ltv/fips"]
+aws-lc = ["riptering/aws-lc", "bergshamra-crypto/aws-lc", "bergshamra-pkcs12/aws-lc", "ritsp-ltv/aws-lc"]
+fips = ["aws-lc", "riptering/fips", "bergshamra-crypto/fips", "bergshamra-pkcs12/fips", "ritsp-ltv/fips"]
 post-quantum = [
-    "kryptering/post-quantum",
+    "riptering/post-quantum",
     "bergshamra-crypto/post-quantum",
 ]
-pkcs11 = ["kryptering/pkcs11", "bergshamra-crypto/pkcs11"]
+pkcs11 = ["riptering/pkcs11", "bergshamra-crypto/pkcs11"]
 # Accept weak/legacy digests (MD5/SHA-1/SHA-224) in X.509 certificate-chain
 # verification, for historical XML-DSig interop material. Off by default
 # (strict, fail-closed). See `x509::cert_signature_policy`.
 legacy-algorithms = [
     "bergshamra-crypto/legacy-algorithms",
     "bergshamra-pkcs12/legacy-algorithms",
-    "tsp-ltv/legacy-algorithms",
+    "ritsp-ltv/legacy-algorithms",
 ]
 
 [dependencies]
 bergshamra-core.workspace = true
 bergshamra-crypto.workspace = true
-kryptering.workspace = true
+riptering.workspace = true
 ed25519-dalek = { workspace = true, optional = true }
 x25519-dalek = { workspace = true, optional = true }
 rsa = { workspace = true, optional = true }
@@ -83,7 +83,7 @@ num-bigint-dig = { workspace = true, optional = true }
 num-traits = { workspace = true, optional = true }
 signature = { workspace = true, optional = true }
 uppsala.workspace = true
-tsp-ltv.workspace = true
+ritsp-ltv.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]

@@ -3,7 +3,7 @@
 //! Key transport algorithms (RSA PKCS#1 v1.5, RSA-OAEP).
 
 use bergshamra_core::{algorithm, Error};
-use kryptering::algorithm::{
+use riptering::algorithm::{
     HashAlgorithm, KeyTransportAlgorithm as KKeyTransportAlgorithm, OaepConfig,
 };
 
@@ -15,14 +15,14 @@ pub trait KeyTransportAlgorithm: Send {
     /// Encrypt a content-encryption key or key-wrapping key for `public_key`.
     fn encrypt(
         &self,
-        public_key: &kryptering::SoftwareKey,
+        public_key: &riptering::SoftwareKey,
         key_data: &[u8],
     ) -> Result<Vec<u8>, Error>;
 
     /// Decrypt transported key bytes with `private_key`.
     fn decrypt(
         &self,
-        private_key: &kryptering::SoftwareKey,
+        private_key: &riptering::SoftwareKey,
         encrypted: &[u8],
     ) -> Result<Vec<u8>, Error>;
 }
@@ -51,7 +51,7 @@ pub fn from_uri_with_params(
     match uri {
         algorithm::RSA_PKCS1 => {
             #[cfg(feature = "legacy-algorithms")]
-            return Ok(Box::new(KrypteringKeyTransport {
+            return Ok(Box::new(RipteringKeyTransport {
                 uri: algorithm::RSA_PKCS1,
                 algo: KKeyTransportAlgorithm::RsaPkcs1v15,
                 label: None,
@@ -73,7 +73,7 @@ pub fn from_uri_with_params(
                 digest,
                 mgf_digest: mgf,
             };
-            Ok(Box::new(KrypteringKeyTransport {
+            Ok(Box::new(RipteringKeyTransport {
                 uri: static_uri,
                 algo: KKeyTransportAlgorithm::RsaOaep(config),
                 label: params.oaep_params,
@@ -152,40 +152,40 @@ fn resolve_oaep_mgf(
     Ok(digest)
 }
 
-// ── Wrapper that delegates to kryptering ────────────────────────────
+// ── Wrapper that delegates to riptering ────────────────────────────
 
-struct KrypteringKeyTransport {
+struct RipteringKeyTransport {
     uri: &'static str,
     algo: KKeyTransportAlgorithm,
     label: Option<Vec<u8>>,
 }
 
-impl KeyTransportAlgorithm for KrypteringKeyTransport {
+impl KeyTransportAlgorithm for RipteringKeyTransport {
     fn uri(&self) -> &'static str {
         self.uri
     }
 
     fn encrypt(
         &self,
-        public_key: &kryptering::SoftwareKey,
+        public_key: &riptering::SoftwareKey,
         key_data: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        kryptering::keytransport::kt_encrypt(self.algo, public_key, key_data, self.label.as_deref())
-            .map_err(crate::map_kryptering_err)
+        riptering::keytransport::kt_encrypt(self.algo, public_key, key_data, self.label.as_deref())
+            .map_err(crate::map_riptering_err)
     }
 
     fn decrypt(
         &self,
-        private_key: &kryptering::SoftwareKey,
+        private_key: &riptering::SoftwareKey,
         encrypted: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        kryptering::keytransport::kt_decrypt(
+        riptering::keytransport::kt_decrypt(
             self.algo,
             private_key,
             encrypted,
             self.label.as_deref(),
         )
-        .map_err(crate::map_kryptering_err)
+        .map_err(crate::map_riptering_err)
     }
 }
 
@@ -193,7 +193,7 @@ impl KeyTransportAlgorithm for KrypteringKeyTransport {
 mod tests {
     use super::{from_uri_with_params, resolve_digest, resolve_mgf, OaepParams};
     use bergshamra_core::algorithm;
-    use kryptering::algorithm::HashAlgorithm;
+    use riptering::algorithm::HashAlgorithm;
 
     #[test]
     fn resolve_digest_defaults_only_when_absent() {
@@ -237,13 +237,13 @@ mod tests {
         let public = rsa::RsaPublicKey::from(&private);
         let private_der = private.to_pkcs8_der().unwrap();
         let public_der = public.to_public_key_der().unwrap();
-        let private = kryptering::SoftwareKey::from_pkcs8_der(
-            kryptering::KeyAlgorithm::Rsa,
+        let private = riptering::SoftwareKey::from_pkcs8_der(
+            riptering::KeyAlgorithm::Rsa,
             private_der.as_bytes(),
         )
         .unwrap();
-        let public = kryptering::SoftwareKey::from_spki_der(
-            kryptering::KeyAlgorithm::Rsa,
+        let public = riptering::SoftwareKey::from_spki_der(
+            riptering::KeyAlgorithm::Rsa,
             public_der.as_bytes(),
         )
         .unwrap();
@@ -272,13 +272,13 @@ mod tests {
         let public = rsa::RsaPublicKey::from(&private);
         let private_der = private.to_pkcs8_der().unwrap();
         let public_der = public.to_public_key_der().unwrap();
-        let private = kryptering::SoftwareKey::from_pkcs8_der(
-            kryptering::KeyAlgorithm::Rsa,
+        let private = riptering::SoftwareKey::from_pkcs8_der(
+            riptering::KeyAlgorithm::Rsa,
             private_der.as_bytes(),
         )
         .unwrap();
-        let public = kryptering::SoftwareKey::from_spki_der(
-            kryptering::KeyAlgorithm::Rsa,
+        let public = riptering::SoftwareKey::from_spki_der(
+            riptering::KeyAlgorithm::Rsa,
             public_der.as_bytes(),
         )
         .unwrap();

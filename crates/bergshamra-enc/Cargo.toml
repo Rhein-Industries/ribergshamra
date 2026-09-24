@@ -10,12 +10,12 @@ description = "XML Encryption for Bergshamra XML Security library"
 
 [features]
 default = ["rustcrypto", "legacy-algorithms", "post-quantum", "pkcs11"]
-rustcrypto = ["bergshamra-crypto/rustcrypto", "bergshamra-keys/rustcrypto", "bergshamra-transforms/rustcrypto", "kryptering/rustcrypto"]
-aws-lc = ["bergshamra-crypto/aws-lc", "bergshamra-keys/aws-lc", "bergshamra-transforms/aws-lc", "kryptering/aws-lc"]
-fips = ["aws-lc", "bergshamra-crypto/fips", "bergshamra-keys/fips", "bergshamra-transforms/fips", "kryptering/fips"]
-legacy-algorithms = ["bergshamra-crypto/legacy-algorithms", "bergshamra-keys/legacy-algorithms", "bergshamra-transforms/legacy-algorithms", "kryptering/legacy"]
-post-quantum = ["bergshamra-crypto/post-quantum", "bergshamra-keys/post-quantum", "bergshamra-transforms/post-quantum", "kryptering/post-quantum"]
-pkcs11 = ["bergshamra-crypto/pkcs11", "bergshamra-keys/pkcs11", "bergshamra-transforms/pkcs11", "kryptering/pkcs11"]
+rustcrypto = ["bergshamra-crypto/rustcrypto", "bergshamra-keys/rustcrypto", "bergshamra-transforms/rustcrypto", "riptering/rustcrypto"]
+aws-lc = ["bergshamra-crypto/aws-lc", "bergshamra-keys/aws-lc", "bergshamra-transforms/aws-lc", "riptering/aws-lc"]
+fips = ["aws-lc", "bergshamra-crypto/fips", "bergshamra-keys/fips", "bergshamra-transforms/fips", "riptering/fips"]
+legacy-algorithms = ["bergshamra-crypto/legacy-algorithms", "bergshamra-keys/legacy-algorithms", "bergshamra-transforms/legacy-algorithms", "riptering/legacy"]
+post-quantum = ["bergshamra-crypto/post-quantum", "bergshamra-keys/post-quantum", "bergshamra-transforms/post-quantum", "riptering/post-quantum"]
+pkcs11 = ["bergshamra-crypto/pkcs11", "bergshamra-keys/pkcs11", "bergshamra-transforms/pkcs11", "riptering/pkcs11"]
 
 [dependencies]
 bergshamra-core.workspace = true
@@ -26,4 +26,4 @@ bergshamra-c14n.workspace = true
 bergshamra-crypto.workspace = true
 base64.workspace = true
 uppsala.workspace = true
-kryptering.workspace = true
+riptering.workspace = true

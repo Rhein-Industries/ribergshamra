@@ -176,7 +176,7 @@ mod tests {
                 .iter()
                 .find(|k| k.name.as_deref() == Some("test-hmac-sha1"))
                 .unwrap();
-            assert_eq!(hmac.data.algorithm(), kryptering::KeyAlgorithm::Hmac);
+            assert_eq!(hmac.data.algorithm(), riptering::KeyAlgorithm::Hmac);
             assert_eq!(hmac.symmetric_key_bytes(), Some(b"secret".as_slice()));
 
             for (name, length) in [
@@ -188,7 +188,7 @@ mod tests {
                     .iter()
                     .find(|key| key.name.as_deref() == Some(name))
                     .unwrap();
-                assert_eq!(key.data.algorithm(), kryptering::KeyAlgorithm::Aes);
+                assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::Aes);
                 assert_eq!(key.symmetric_key_bytes().map(<[u8]>::len), Some(length));
             }
 
@@ -196,14 +196,14 @@ mod tests {
                 .iter()
                 .find(|k| k.name.as_deref() == Some("test-des"))
                 .unwrap();
-            assert_eq!(des.data.algorithm(), kryptering::KeyAlgorithm::TripleDes);
+            assert_eq!(des.data.algorithm(), riptering::KeyAlgorithm::TripleDes);
             assert_eq!(des.symmetric_key_bytes().map(<[u8]>::len), Some(24));
 
             let rsa_key = keys
                 .iter()
                 .find(|k| k.name.as_deref() == Some("test-rsa"))
                 .unwrap();
-            assert_eq!(rsa_key.data.algorithm(), kryptering::KeyAlgorithm::Rsa);
+            assert_eq!(rsa_key.data.algorithm(), riptering::KeyAlgorithm::Rsa);
         }
     }
 }

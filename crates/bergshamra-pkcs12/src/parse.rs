@@ -470,12 +470,12 @@ fn verify_mac(mac: &MacData, auth_safe_data: &[u8], password: &str) -> Result<()
         MacHashAlgorithm::Sha1 => {
             let mac_key =
                 kdf::pkcs12_kdf_sha1(kdf::ID_MAC, password, &mac.salt, mac.iterations, 20)?;
-            kdf::compute_hmac(kryptering::HashAlgorithm::Sha1, &mac_key, auth_safe_data)?
+            kdf::compute_hmac(riptering::HashAlgorithm::Sha1, &mac_key, auth_safe_data)?
         }
         MacHashAlgorithm::Sha256 => {
             let mac_key =
                 kdf::pkcs12_kdf_sha256(kdf::ID_MAC, password, &mac.salt, mac.iterations, 32)?;
-            kdf::compute_hmac(kryptering::HashAlgorithm::Sha256, &mac_key, auth_safe_data)?
+            kdf::compute_hmac(riptering::HashAlgorithm::Sha256, &mac_key, auth_safe_data)?
         }
     };
 
@@ -506,7 +506,7 @@ fn decrypt_data(
             aes_iv,
         } => match pbkdf2_prf {
             PrfAlgorithm::HmacSha256 => kdf::decrypt_pbes2_aes256cbc(
-                kryptering::HashAlgorithm::Sha256,
+                riptering::HashAlgorithm::Sha256,
                 ciphertext,
                 password,
                 pbkdf2_salt,
@@ -514,7 +514,7 @@ fn decrypt_data(
                 aes_iv,
             ),
             PrfAlgorithm::HmacSha1 => kdf::decrypt_pbes2_aes256cbc(
-                kryptering::HashAlgorithm::Sha1,
+                riptering::HashAlgorithm::Sha1,
                 ciphertext,
                 password,
                 pbkdf2_salt,

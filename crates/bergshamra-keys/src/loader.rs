@@ -1245,7 +1245,7 @@ mod tests {
         }
         let key =
             load_key_file_with_password(pem_path, Some("secret123")).expect("load encrypted PEM");
-        assert_eq!(key.data.algorithm(), kryptering::KeyAlgorithm::Rsa);
+        assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::Rsa);
         assert!(key.has_private_key());
     }
 
@@ -1280,7 +1280,7 @@ mod tests {
         }
         let data = std::fs::read(p12_path).unwrap();
         let key = load_pkcs12(&data, "secret123").expect("load_pkcs12");
-        assert_eq!(key.data.algorithm(), kryptering::KeyAlgorithm::Rsa);
+        assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::Rsa);
         assert!(!key.x509_chain.is_empty());
     }
 
@@ -1308,7 +1308,7 @@ mod tests {
         let key = load_pkcs12(&data, "passwd").expect("load_pkcs12 DH should succeed");
         eprintln!("loaded key algo: {}", key.data.algorithm_name());
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Dh,
+            key.data.algorithm() == riptering::KeyAlgorithm::Dh,
             "expected DH key, got {}",
             key.data.algorithm_name()
         );
@@ -1324,7 +1324,7 @@ mod tests {
         let key = load_key_file_with_password(pem_path, None).expect("load DH PEM private");
         eprintln!("loaded key algo: {}", key.data.algorithm_name());
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Dh,
+            key.data.algorithm() == riptering::KeyAlgorithm::Dh,
             "expected DH key, got {}",
             key.data.algorithm_name()
         );
@@ -1342,7 +1342,7 @@ mod tests {
         let key = load_key_file_with_password(pem_path, None).expect("load DH PEM public");
         eprintln!("loaded key algo: {}", key.data.algorithm_name());
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Dh,
+            key.data.algorithm() == riptering::KeyAlgorithm::Dh,
             "expected DH key, got {}",
             key.data.algorithm_name()
         );
@@ -1365,7 +1365,7 @@ mod tests {
         let key = load_ed25519_private_pkcs8_der(pkcs8_der.as_bytes())
             .expect("load Ed25519 private key from PKCS#8 DER");
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ed25519 && key.has_private_key(),
+            key.data.algorithm() == riptering::KeyAlgorithm::Ed25519 && key.has_private_key(),
             "expected Ed25519 key with private component, got {}",
             key.data.algorithm_name()
         );
@@ -1390,7 +1390,7 @@ mod tests {
         let key = load_ed25519_public_spki_der(spki_der.as_ref())
             .expect("load Ed25519 public key from SPKI DER");
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ed25519 && !key.has_private_key(),
+            key.data.algorithm() == riptering::KeyAlgorithm::Ed25519 && !key.has_private_key(),
             "expected Ed25519 key without private component, got {}",
             key.data.algorithm_name()
         );
@@ -1414,7 +1414,7 @@ mod tests {
         let key = load_private_key_pkcs8_der(pkcs8_der.as_bytes())
             .expect("auto-detect Ed25519 from PKCS#8");
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ed25519 && key.has_private_key(),
+            key.data.algorithm() == riptering::KeyAlgorithm::Ed25519 && key.has_private_key(),
             "auto-detect should find Ed25519 key"
         );
     }
@@ -1436,7 +1436,7 @@ mod tests {
 
         let key = load_spki_der(spki_der.as_ref()).expect("auto-detect Ed25519 from SPKI");
         assert!(
-            key.data.algorithm() == kryptering::KeyAlgorithm::Ed25519 && !key.has_private_key(),
+            key.data.algorithm() == riptering::KeyAlgorithm::Ed25519 && !key.has_private_key(),
             "auto-detect should find Ed25519 public key"
         );
     }
@@ -1496,7 +1496,7 @@ mod tests {
         let expected_public = x25519_dalek::PublicKey::from(&secret);
 
         let key = load_x25519_private_raw(secret.as_bytes()).expect("load X25519 private");
-        assert_eq!(key.data.algorithm(), kryptering::KeyAlgorithm::X25519);
+        assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::X25519);
         assert!(key.has_private_key());
         assert_eq!(
             key.data.export_private().unwrap().as_slice(),
@@ -1514,7 +1514,7 @@ mod tests {
         let public = x25519_dalek::PublicKey::from(&secret);
 
         let key = load_x25519_public_raw(public.as_bytes()).expect("load X25519 public");
-        assert_eq!(key.data.algorithm(), kryptering::KeyAlgorithm::X25519);
+        assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::X25519);
         assert!(!key.has_private_key());
         assert_eq!(
             key.data.export_public().unwrap().as_slice(),

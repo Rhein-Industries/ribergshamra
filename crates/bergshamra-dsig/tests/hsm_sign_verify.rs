@@ -1,4 +1,4 @@
-//! Integration test: sign and verify XML signatures using SoftHSM2 via kryptering PKCS#11.
+//! Integration test: sign and verify XML signatures using SoftHSM2 via riptering PKCS#11.
 //!
 //! Prerequisites: run `bash hsm-test/setup.sh` from the bergshamra root directory.
 //! Tests are ignored by default; run with:
@@ -53,7 +53,7 @@ fn set_softhsm_conf() {
 #[ignore] // Requires SoftHSM2 setup: run `bash hsm-test/setup.sh` first
 fn test_pkcs11_provider_loads_softhsm() {
     set_softhsm_conf();
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2 library");
     let _session = provider
         .open_session("1234")
@@ -64,7 +64,7 @@ fn test_pkcs11_provider_loads_softhsm() {
 #[ignore] // Requires SoftHSM2 setup: run `bash hsm-test/setup.sh` first
 fn test_pkcs11_provider_wrong_pin_fails() {
     set_softhsm_conf();
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2 library");
     let result = provider.open_session("wrong-pin");
     assert!(
@@ -74,30 +74,30 @@ fn test_pkcs11_provider_wrong_pin_fails() {
 }
 
 #[test]
-#[ignore] // Requires SoftHSM2 setup + kryptering PKCS#11 signing implementation
+#[ignore] // Requires SoftHSM2 setup + riptering PKCS#11 signing implementation
 fn test_hsm_rsa_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA signer");
 
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA verifier");
 
@@ -122,35 +122,35 @@ fn test_hsm_rsa_sign_verify() {
 }
 
 #[test]
-#[ignore] // Requires SoftHSM2 setup + kryptering PKCS#11 signing implementation
+#[ignore] // Requires SoftHSM2 setup + riptering PKCS#11 signing implementation
 fn test_hsm_ec_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-ec-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P256,
-            kryptering::HashAlgorithm::Sha256,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P256,
+            riptering::HashAlgorithm::Sha256,
         ),
     )
     .expect("Failed to create EC signer");
 
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-ec-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P256,
-            kryptering::HashAlgorithm::Sha256,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P256,
+            riptering::HashAlgorithm::Sha256,
         ),
     )
     .expect("Failed to create EC verifier");
@@ -176,32 +176,32 @@ fn test_hsm_ec_sign_verify() {
 }
 
 #[test]
-#[ignore] // Requires SoftHSM2 setup + kryptering PKCS#11 signing + bergshamra-dsig HSM integration
+#[ignore] // Requires SoftHSM2 setup + riptering PKCS#11 signing + bergshamra-dsig HSM integration
 fn test_hsm_rsa_xml_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
     // Create HSM signer for RSA-SHA256
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create signer");
 
     // Create HSM verifier
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create verifier");
 
@@ -272,27 +272,27 @@ fn test_hsm_rsa_xml_sign_verify() {
 }
 
 #[test]
-#[ignore] // Requires SoftHSM2 setup + kryptering PKCS#11 signing implementation
+#[ignore] // Requires SoftHSM2 setup + riptering PKCS#11 signing implementation
 fn test_hsm_sign_software_verify() {
     // Sign with HSM, then verify with the HSM verifier (same key label).
     // This validates that the HSM-produced signature format is consistent
     // with the PKCS#11 verification path.
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
     // Sign with the private key via HSM
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA signer");
 
@@ -301,10 +301,10 @@ fn test_hsm_sign_software_verify() {
     assert!(!signature.is_empty(), "Signature should not be empty");
 
     // Verify with the public key via HSM (proves the signature format is valid)
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPkcs1v15(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPkcs1v15(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA verifier");
 
@@ -329,33 +329,33 @@ fn test_hsm_sign_software_verify() {
 #[test]
 #[ignore] // Requires SoftHSM2 setup with EC P-384 key
 fn test_hsm_ec384_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-ec384-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P384,
-            kryptering::HashAlgorithm::Sha384,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P384,
+            riptering::HashAlgorithm::Sha384,
         ),
     )
     .expect("Failed to create EC P-384 signer");
 
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-ec384-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P384,
-            kryptering::HashAlgorithm::Sha384,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P384,
+            riptering::HashAlgorithm::Sha384,
         ),
     )
     .expect("Failed to create EC P-384 verifier");
@@ -383,28 +383,28 @@ fn test_hsm_ec384_sign_verify() {
 #[test]
 #[ignore] // Requires SoftHSM2 setup with RSA key
 fn test_hsm_rsa_pss_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPss(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPss(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA-PSS signer");
 
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-rsa-key",
-        kryptering::SignatureAlgorithm::RsaPss(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::RsaPss(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create RSA-PSS verifier");
 
@@ -431,21 +431,21 @@ fn test_hsm_rsa_pss_sign_verify() {
 #[test]
 #[ignore] // Requires SoftHSM2 setup with HMAC key
 fn test_hsm_hmac_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
-    let hmac = kryptering::pkcs11::Pkcs11HmacSigner::new(
+    let hmac = riptering::pkcs11::Pkcs11HmacSigner::new(
         &session,
         "test-hmac-key",
-        kryptering::SignatureAlgorithm::Hmac(kryptering::HashAlgorithm::Sha256),
+        riptering::SignatureAlgorithm::Hmac(riptering::HashAlgorithm::Sha256),
     )
     .expect("Failed to create HMAC signer");
 
@@ -467,12 +467,12 @@ fn test_hsm_hmac_sign_verify() {
 #[test]
 #[ignore] // Requires SoftHSM2 setup with Ed25519 key (may not be supported)
 fn test_hsm_ed25519_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
@@ -480,10 +480,10 @@ fn test_hsm_ed25519_sign_verify() {
 
     // Ed25519 key may not have been generated if SoftHSM2 doesn't support it.
     // Gracefully skip if the key is not found.
-    let signer = match kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = match riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-ed25519-key",
-        kryptering::SignatureAlgorithm::Ed25519,
+        riptering::SignatureAlgorithm::Ed25519,
     ) {
         Ok(s) => s,
         Err(e) => {
@@ -492,10 +492,10 @@ fn test_hsm_ed25519_sign_verify() {
         }
     };
 
-    let verifier = match kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = match riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-ed25519-key",
-        kryptering::SignatureAlgorithm::Ed25519,
+        riptering::SignatureAlgorithm::Ed25519,
     ) {
         Ok(v) => v,
         Err(e) => {
@@ -531,37 +531,37 @@ fn test_hsm_ed25519_sign_verify() {
 }
 
 #[test]
-#[ignore] // Requires SoftHSM2 setup + kryptering PKCS#11 signing + bergshamra-dsig
+#[ignore] // Requires SoftHSM2 setup + riptering PKCS#11 signing + bergshamra-dsig
 fn test_hsm_ec_xml_sign_verify() {
-    use kryptering::Signer;
-    use kryptering::Verifier;
+    use riptering::Signer;
+    use riptering::Verifier;
 
     set_softhsm_conf();
 
-    let provider = kryptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
+    let provider = riptering::pkcs11::Pkcs11Provider::new(Path::new(softhsm_lib()))
         .expect("Failed to load SoftHSM2");
     let session = provider
         .open_session("1234")
         .expect("Failed to open session");
 
     // Create HSM signer for ECDSA P-256 SHA-256
-    let signer = kryptering::pkcs11::Pkcs11Signer::new(
+    let signer = riptering::pkcs11::Pkcs11Signer::new(
         &session,
         "test-ec-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P256,
-            kryptering::HashAlgorithm::Sha256,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P256,
+            riptering::HashAlgorithm::Sha256,
         ),
     )
     .expect("Failed to create EC signer");
 
     // Create HSM verifier
-    let verifier = kryptering::pkcs11::Pkcs11Verifier::new(
+    let verifier = riptering::pkcs11::Pkcs11Verifier::new(
         &session,
         "test-ec-key",
-        kryptering::SignatureAlgorithm::Ecdsa(
-            kryptering::EcCurve::P256,
-            kryptering::HashAlgorithm::Sha256,
+        riptering::SignatureAlgorithm::Ecdsa(
+            riptering::EcCurve::P256,
+            riptering::HashAlgorithm::Sha256,
         ),
     )
     .expect("Failed to create EC verifier");

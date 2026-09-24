@@ -5,13 +5,13 @@
 //! Validates leaf certificates against trusted roots with optional intermediate
 //! certificates. Supports time override, CRL checking, and chain building.
 //!
-//! This module is a facade over [`tsp_ltv`] — the shared trust/validation
+//! This module is a facade over [`ritsp_ltv`] — the shared trust/validation
 //! infrastructure used across the e-signing family of crates.
 
 use bergshamra_core::Error;
 use der::Decode;
-use tsp_ltv::crypto::verify::SignaturePolicy;
-use tsp_ltv::trust::{build_chain_from_pool_with_policy, trust_anchor_subjects, TrustStore};
+use ritsp_ltv::crypto::verify::SignaturePolicy;
+use ritsp_ltv::trust::{build_chain_from_pool_with_policy, trust_anchor_subjects, TrustStore};
 use x509_cert::Certificate;
 
 /// The signature-algorithm policy applied to certificate-chain verification.
@@ -20,7 +20,7 @@ use x509_cert::Certificate;
 /// signatures over weak/deprecated digests (MD5/SHA-1/SHA-224) are accepted so
 /// historical XML-DSig interop material (the merlin/phaos/aleksey/xmldsig11 test
 /// corpora, all SHA-1-era) validates. Without that feature the strict,
-/// fail-closed tsp-ltv default is used and weak-digest certificate chains are
+/// fail-closed ritsp-ltv default is used and weak-digest certificate chains are
 /// rejected. This mirrors how bergshamra already gates legacy digest/signature
 /// support elsewhere behind the same feature.
 fn cert_signature_policy() -> SignaturePolicy {
@@ -104,8 +104,8 @@ pub fn validate_cert_chain(
     // Check if the leaf is directly a trusted cert (self-signed trusted)
     let leaf_der_owned = leaf_der.to_vec();
     if trust_store.contains_der(&leaf_der_owned) {
-        // Self-signed trusted cert — verify self-signature via tsp-ltv
-        tsp_ltv::crypto::verify::verify_certificate_signature_with_policy(
+        // Self-signed trusted cert — verify self-signature via ritsp-ltv
+        ritsp_ltv::crypto::verify::verify_certificate_signature_with_policy(
             &leaf,
             &leaf,
             &sig_policy,

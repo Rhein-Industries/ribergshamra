@@ -149,16 +149,16 @@ pub mod verify;
 pub use context::DsigContext;
 pub use verify::{VerifiedKeyInfo, VerifiedReference, VerifyResult};
 
-/// Convert a [`kryptering::Error`] into a [`bergshamra_core::Error`].
-fn map_kryptering_err(e: kryptering::Error) -> bergshamra_core::Error {
+/// Convert a [`riptering::Error`] into a [`bergshamra_core::Error`].
+fn map_riptering_err(e: riptering::Error) -> bergshamra_core::Error {
     match e {
-        kryptering::Error::Crypto(s) => bergshamra_core::Error::Crypto(s),
-        err @ kryptering::Error::UnsupportedAlgorithm { .. } => {
+        riptering::Error::Crypto(s) => bergshamra_core::Error::Crypto(s),
+        err @ riptering::Error::UnsupportedAlgorithm { .. } => {
             bergshamra_core::Error::UnsupportedAlgorithm(err.to_string())
         }
-        kryptering::Error::Key(s) => bergshamra_core::Error::Key(s),
-        kryptering::Error::Io(e) => bergshamra_core::Error::Io(e),
-        // Handle additional error variants (e.g., Pkcs11) when the kryptering
+        riptering::Error::Key(s) => bergshamra_core::Error::Key(s),
+        riptering::Error::Io(e) => bergshamra_core::Error::Io(e),
+        // Handle additional error variants (e.g., Pkcs11) when the riptering
         // crate is compiled with optional features.
         #[allow(unreachable_patterns)]
         other => bergshamra_core::Error::Crypto(other.to_string()),

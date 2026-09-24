@@ -3,7 +3,8 @@
 XML Security library implementing the W3C XML Digital Signatures
 (XML-DSig), XML Encryption (XML-Enc), and XML Canonicalization (C14N)
 specifications. Document cryptography is selectable between RustCrypto and
-AWS-LC through Kryptering; XML parsing uses
+AWS-LC through [riptering](https://github.com/Rhein-Industries/riptering);
+XML parsing uses
 [Uppsala](https://crates.io/crates/uppsala). Version 0.10.1 was released on
 August 02, 2026, and requires Rust 1.88.
 
@@ -86,7 +87,7 @@ the W3C, Merlin, Aleksey, IAIK, NIST, and Phaos interop suites.
 The three skipped DSig cases are GOST signature transform fixtures (GOST R
 34.10-2001, GOST R 34.10-2012-256, GOST R 34.10-2012-512) which require special
 OS cryptographic libraries not available in the RustCrypto ecosystem, thus
-outside Kryptering's algorithm contract. Alternate providers use focused
+outside riptering's algorithm contract. Alternate providers use focused
 capability and policy tests rather than this XMLSEC compatibility gate.
 
 A Python shim (`tests/xmlsec1-shim.py`) translates xmlsec1 CLI flags to

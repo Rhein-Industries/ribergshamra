@@ -8,7 +8,7 @@
 //! ## Shared infrastructure
 //!
 //! Trust store management, certificate chain building/verification, and
-//! cryptographic algorithm support are re-exported from the shared [`tsp_ltv`]
+//! cryptographic algorithm support are re-exported from the shared [`ritsp_ltv`]
 //! crate. This follows the same "thin facade" pattern used by underskrift
 //! (PDF signing library).
 
@@ -28,9 +28,9 @@ pub mod manager;
 pub mod trust;
 pub mod x509;
 
-// Re-export shared infrastructure from tsp-ltv
-pub use tsp_ltv::crypto as tsp_crypto;
-pub use tsp_ltv::error as tsp_error;
+// Re-export shared infrastructure from ritsp-ltv
+pub use ritsp_ltv::crypto as tsp_crypto;
+pub use ritsp_ltv::error as tsp_error;
 
 pub use key::{Key, KeyData, KeyUsage};
 pub use keyinfo::{build_x509_key_info, build_x509_key_info_from_der};
