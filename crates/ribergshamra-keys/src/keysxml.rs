@@ -151,7 +151,10 @@ mod tests {
 
     #[test]
     fn test_parse_keys_xml() {
-        let keys_path = std::path::Path::new("../../test-data/keys/keys.xml");
+        let keys_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/keys.xml"
+        ));
         if !keys_path.exists() {
             eprintln!("skipping test: {keys_path:?} not found");
             return;

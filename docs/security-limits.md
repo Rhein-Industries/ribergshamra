@@ -79,8 +79,9 @@ timing advisory. The historical XMLSEC gate explicitly enables this feature and
 excludes the upstream profile's future-CRL acceptance case. Default-policy
 refusal, authentication/currentness and provider behavior have separate tests.
 
-These are coordinated unpublished changes. Development validation links the
-local repositories using Cargo path patches. The updated riptering feature must
-be published, downstream minimum versions and lockfiles updated, and each layer
-released in dependency order before standalone registry builds or deployed
-consumers receive this policy.
+The 0.11 release line requires published riptering 0.7 and ritsp-ltv 0.6.
+Update these dependencies together when using their re-exported types directly,
+and refresh consumer lockfiles. CI verifies the published registry graph without
+local source overrides. Applications upgrading from 0.10 should review these
+processing limits, corrected canonical bytes, CRL profile restrictions and the
+separate RSA decryption opt-in before deployment.

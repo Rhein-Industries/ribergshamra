@@ -16,7 +16,7 @@ resolver = "2"
 # ribergshamra is Rhein Industries' maintained fork of bergshamra by Kushal Das
 # (https://github.com/kushaldas/bergshamra); see README.md and LICENSE.
 [workspace.package]
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 authors = ["Kushal Das (original bergshamra author)", "Rhein Industries"]
 license = "BSD-2-Clause"
@@ -27,15 +27,15 @@ rust-version = "1.88"
 
 [workspace.dependencies]
 # Internal crates
-ribergshamra-core = { version = "0.10.0", path = "crates/ribergshamra-core", default-features = false }
-ribergshamra-xml = { version = "0.10.0", path = "crates/ribergshamra-xml", default-features = false }
-ribergshamra-c14n = { version = "0.10.0", path = "crates/ribergshamra-c14n", default-features = false }
-ribergshamra-crypto = { version = "0.10.0", path = "crates/ribergshamra-crypto", default-features = false }
-ribergshamra-keys = { version = "0.10.0", path = "crates/ribergshamra-keys", default-features = false }
-ribergshamra-transforms = { version = "0.10.0", path = "crates/ribergshamra-transforms", default-features = false }
-ribergshamra-dsig = { version = "0.10.0", path = "crates/ribergshamra-dsig", default-features = false }
-ribergshamra-enc = { version = "0.10.0", path = "crates/ribergshamra-enc", default-features = false }
-ribergshamra-pkcs12 = { version = "0.10.0", path = "crates/ribergshamra-pkcs12", default-features = false }
+ribergshamra-core = { version = "0.11.0", path = "crates/ribergshamra-core", default-features = false }
+ribergshamra-xml = { version = "0.11.0", path = "crates/ribergshamra-xml", default-features = false }
+ribergshamra-c14n = { version = "0.11.0", path = "crates/ribergshamra-c14n", default-features = false }
+ribergshamra-crypto = { version = "0.11.0", path = "crates/ribergshamra-crypto", default-features = false }
+ribergshamra-keys = { version = "0.11.0", path = "crates/ribergshamra-keys", default-features = false }
+ribergshamra-transforms = { version = "0.11.0", path = "crates/ribergshamra-transforms", default-features = false }
+ribergshamra-dsig = { version = "0.11.0", path = "crates/ribergshamra-dsig", default-features = false }
+ribergshamra-enc = { version = "0.11.0", path = "crates/ribergshamra-enc", default-features = false }
+ribergshamra-pkcs12 = { version = "0.11.0", path = "crates/ribergshamra-pkcs12", default-features = false }
 
 # XML parsing
 uppsala = "0.10"
@@ -96,8 +96,8 @@ criterion = "0.5"
 
 # Shared crypto backend: riptering, Rhein Industries' maintained fork of
 # kryptering. Features are forwarded by the member crates under the same names.
-riptering = { version = "0.6.2", default-features = false }
+riptering = { version = "0.7.0", default-features = false }
 
 # Shared trust/validation infrastructure: ritsp-ltv, Rhein Industries'
 # maintained fork of tsp-ltv (built on riptering).
-ritsp-ltv = { version = "0.5", default-features = false }
+ritsp-ltv = { version = "0.6.0", default-features = false }

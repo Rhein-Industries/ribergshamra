@@ -478,7 +478,7 @@ mod tests {
     // certificates/CRLs. No fixture files or algorithms are changed.
     fn sign(bytes: &[u8]) -> der::asn1::BitString {
         let key = crate::loader::load_rsa_private_pem(include_bytes!(
-            "../../../test-data/keys/rsa/rsa-2048-key.pem"
+            "../tests/fixtures/keys/rsa/rsa-2048-key.pem"
         ))
         .unwrap()
         .to_signing_key()
@@ -509,7 +509,7 @@ mod tests {
 
     fn issuer_and_leaf() -> (Certificate, Certificate) {
         let mut issuer = Certificate::from_der(include_bytes!(
-            "../../../test-data/keys/rsa/rsa-2048-cert.der"
+            "../tests/fixtures/keys/rsa/rsa-2048-cert.der"
         ))
         .unwrap();
         issuer.tbs_certificate.subject = "CN=CRL Regression Issuer".parse().unwrap();

@@ -1952,7 +1952,7 @@ mod tests {
     fn generated_issuer_names_preserve_email_values_rdn_groups_and_escaping() {
         use der::Decode;
         let cert = x509_cert::Certificate::from_der(include_bytes!(
-            "../../../test-data/keys/rsa/rsa-2048-cert.der"
+            "../tests/fixtures/keys/rsa/rsa-2048-cert.der"
         ))
         .unwrap();
         let rendered = format_rdn_sequence(&cert.tbs_certificate.issuer).unwrap();

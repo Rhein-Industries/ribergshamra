@@ -1,65 +1,13 @@
 # ribergshamra
 
-> **Fork notice.** ribergshamra is Rhein Industries' actively maintained fork
-> of [bergshamra](https://github.com/kushaldas/bergshamra) by Kushal Das. It
-> starts from bergshamra 0.9.1 (upstream tag `v0.9.1`, commit `c9fbaca`) and
-> keeps bergshamra's BSD-2-Clause license and copyright notice. ribergshamra
-> is **not affiliated with or endorsed by** the upstream author: please report
-> problems with ribergshamra to Rhein Industries, not to the bergshamra
-> project.
->
-> - Bugs and feature requests:
->   <https://github.com/Rhein-Industries/ribergshamra/issues>
-> - Security problems: report them privately as described in
->   [SECURITY.md](SECURITY.md); do not open a public issue.
-
 XML Security library implementing the W3C XML Digital Signatures
 (XML-DSig), XML Encryption (XML-Enc), and XML Canonicalization (C14N)
 specifications. Document cryptography is selectable between RustCrypto and
 AWS-LC through [riptering](https://github.com/Rhein-Industries/riptering);
 trust stores and certificate-chain validation come from
 [ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv); XML parsing uses
-[Uppsala](https://crates.io/crates/uppsala). ribergshamra 0.10.0 requires
+[Uppsala](https://crates.io/crates/uppsala). ribergshamra 0.11.0 requires
 Rust 1.88.
-
-## How ribergshamra differs from bergshamra 0.9.1
-
-- **Names.** The ten crates are renamed `ribergshamra`, `ribergshamra-core`,
-  `-xml`, `-c14n`, `-crypto`, `-pkcs12`, `-keys`, `-transforms`, `-dsig` and
-  `-enc` (`use ribergshamra::...`, `ribergshamra_dsig::...`). The CLI binary
-  is `ribergshamra`, the xmlsec shim reads `RIBERGSHAMRA` instead of
-  `BERGSHAMRA`, and the SoftHSM2 test token is labelled `ribergshamra-test`.
-  XML-DSig/XML-Enc algorithm URIs, namespaces and canonicalization are
-  unchanged.
-- **Dependencies.** [riptering](https://github.com/Rhein-Industries/riptering)
-  0.6 replaces kryptering 0.5 and
-  [ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv) 0.5 replaces
-  tsp-ltv 0.4, so errors, keys and provider types come from riptering. The
-  feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
-  and `PqAlgorithm::to_riptering` replace their `kryptering` names.
-- **RSA key size.** Unchanged from bergshamra: with riptering 0.6.2, the
-  RustCrypto configuration with `legacy-algorithms` (a default feature) still
-  accepts historical 512- and 1024-bit RSA keys and certificate chains, and
-  AWS-LC and FIPS builds require at least 2048 bits.
-- **Project.** Package metadata points at
-  <https://github.com/Rhein-Industries/ribergshamra>; CI runs on
-  GitHub-hosted runners and publishing is manual for now.
-
-The full list is in the [changelog](CHANGELOG.md).
-
-### Migrating from bergshamra
-
-```toml
-[dependencies]
-ribergshamra = "0.10"
-# or keep the `bergshamra::` paths in your code:
-# bergshamra = { package = "ribergshamra", version = "0.10" }
-```
-
-With the plain `ribergshamra` dependency, replace `bergshamra::` with
-`ribergshamra::` (and `bergshamra_*::` with `ribergshamra_*::` for the member
-crates) in your code, and `kryptering::` with `riptering::` where you use the
-crypto backend directly.
 
 ## Features
 
@@ -103,7 +51,7 @@ crypto backend directly.
 † MD5 and RIPEMD-160 are behind the `legacy-algorithms` feature flag.
 
 Exact support depends on the selected provider. See the
-[provider capability table](docs/provider-capabilities.md); unsupported
+[provider capability table](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/docs/provider-capabilities.md); unsupported
 parameter combinations fail deterministically and never fall back to another
 provider.
 
@@ -126,19 +74,21 @@ x86_64/aarch64.
 
 ## xmlsec test suite compatibility
 
-ribergshamra's default RustCrypto configuration is tested against the full
+ribergshamra's RustCrypto configuration with the explicit
+`legacy-rsa-decryption` compatibility feature is tested against the historical
 [xmlsec](https://www.aleksey.com/xmlsec/) interoperability test suite. These
 are the same tests used by the xmlsec1 C library, covering test vectors from
 the W3C, Merlin, Aleksey, IAIK, NIST, and Phaos interop suites.
 
-The totals below are bergshamra 0.9.1's (on kryptering 0.5); ribergshamra's
-CI checks the same totals on riptering 0.6.2.
+CI checks the totals below. Three GOST cases are skipped; one upstream
+future-CRL acceptance case is excluded because the current policy requires
+revocation evidence to be valid now.
 
-| Suite | Passed | Failed | Skipped |
-|-------|--------|--------|---------|
-| Enc   | 701    | 0      | 0       |
-| DSig  | 447    | 0      | 3       |
-| **Total** | **1148** | **0** | **3** |
+| Suite | Passed | Failed | Skipped | Policy excluded |
+|-------|--------|--------|---------|-----------------|
+| Enc   | 701    | 0      | 0       | 0               |
+| DSig  | 446    | 0      | 3       | 1               |
+| **Total** | **1147** | **0** | **3** | **1** |
 
 The three skipped DSig cases are GOST signature transform fixtures (GOST R
 34.10-2001, GOST R 34.10-2012-256, GOST R 34.10-2012-512) which require special
@@ -223,9 +173,13 @@ wants to avoid the initial clone that the borrowed `sign` convenience wrapper
 performs.
 
 The 0.8.0 key, digest, and client changes are summarized in bergshamra's
-[migration guide](docs/migration-0.8.md) (historical).
+[migration guide](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/docs/migration-0.8.md) (historical).
 
 ## Security hardening
+
+Report security problems privately as described in
+[SECURITY.md](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/SECURITY.md);
+do not open a public issue.
 
 XML Digital Signatures are a frequent target of attack. ribergshamra provides
 several layered protections — some always-on, some opt-in.
@@ -353,7 +307,7 @@ executing them. Trusted callers
 using a pipeline directly can choose another count with
 `TransformPipeline::execute_with_limit`. Security entrypoints also apply shared
 XML byte/node/depth, expression work, and output budgets. XSLT execution shares
-finite recursion/work/output counters. See [security processing limits](docs/security-limits.md)
+finite recursion/work/output counters. See [security processing limits](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/docs/security-limits.md)
 for defaults, caller-built DOM handling, and compatibility effects.
 XML-DSig XPath and XPath Filter 2.0 processing also cap delimiter nesting and
 recursive boolean/union expression processing at 64 levels. Expressions over
@@ -375,8 +329,8 @@ RustCrypto RSA decryption is disabled by default, independently of
 `legacy-algorithms`. The explicit `legacy-rsa-decryption` feature restores the
 unpatched path for compatibility. It does not provide timing-side-channel
 resistance. RSA encryption/signing and other providers retain their own policy.
-See [security processing limits](docs/security-limits.md) for migration and the
-coordinated dependency-release requirement.
+See [security processing limits](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/docs/security-limits.md) for migration and the
+required crypto and validation release versions.
 
 ### Recommended configuration for SAML
 
@@ -407,8 +361,58 @@ defences):
 Each demo shows both a naive verifier that is vulnerable and a secure
 verifier using the defences described above.
 
+## Contributing
+
+Report bugs and feature requests in
+[GitHub Issues](https://github.com/Rhein-Industries/ribergshamra/issues).
+
+## Compatibility and migration
+
+Compatibility notes for applications moving from bergshamra 0.9.1.
+
+- **Names.** The ten crates are renamed `ribergshamra`, `ribergshamra-core`,
+  `-xml`, `-c14n`, `-crypto`, `-pkcs12`, `-keys`, `-transforms`, `-dsig` and
+  `-enc` (`use ribergshamra::...`, `ribergshamra_dsig::...`). The CLI binary
+  is `ribergshamra`, the xmlsec shim reads `RIBERGSHAMRA` instead of
+  `BERGSHAMRA`, and the SoftHSM2 test token is labelled `ribergshamra-test`.
+  XML-DSig/XML-Enc algorithm URIs and namespaces are unchanged. Processing
+  limits and canonicalization corrections are described in
+  [the security limits guide](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/docs/security-limits.md).
+- **Dependencies.** [riptering](https://github.com/Rhein-Industries/riptering)
+  0.7 replaces kryptering 0.5 and
+  [ritsp-ltv](https://github.com/Rhein-Industries/ritsp-ltv) 0.6 replaces
+  tsp-ltv 0.4, so errors, keys and provider types come from riptering. The
+  feature names are unchanged. `ribergshamra_crypto::sign::riptering_algorithm_uri`
+  and `PqAlgorithm::to_riptering` replace their `kryptering` names.
+- **Software RSA key size.** With riptering 0.7, the RustCrypto configuration with `legacy-algorithms` (a default feature) still
+  accepts historical 512- and 1024-bit RSA keys and certificate chains, and
+  AWS-LC and FIPS builds require at least 2048 bits.
+- **RSA decryption.** RustCrypto decryption refuses by default. The separate
+  `legacy-rsa-decryption` feature accepts the unresolved timing risk;
+  `legacy-algorithms` alone does not restore decryption. PKCS#11 admission
+  now requires readable key parameters and RSA keys of at least 2048 bits.
+- **Project.** Package metadata points at
+  <https://github.com/Rhein-Industries/ribergshamra>; CI runs on
+  GitHub-hosted runners and publishing is manual for now.
+
+The full list is in the [changelog](https://github.com/Rhein-Industries/ribergshamra/blob/v0.11.0/CHANGELOG.md).
+
+### Migrating from bergshamra
+
+```toml
+[dependencies]
+ribergshamra = "0.11"
+# or keep the `bergshamra::` paths in your code:
+# bergshamra = { package = "ribergshamra", version = "0.11" }
+```
+
+With the plain `ribergshamra` dependency, replace `bergshamra::` with
+`ribergshamra::` (and `bergshamra_*::` with `ribergshamra_*::` for the member
+crates) in your code, and `kryptering::` with `riptering::` where you use the
+crypto backend directly.
+
 ## License
 
-BSD-2-Clause, see [LICENSE](LICENSE). ribergshamra retains bergshamra's
-copyright notice (Copyright (c) 2026, Kushal Das) and adds Rhein Industries'
-notice for the fork's modifications.
+BSD-2-Clause, see [LICENSE](LICENSE).[^history]
+
+[^history]: Started from [bergshamra](https://github.com/kushaldas/bergshamra) by [Kushal Das](https://github.com/kushaldas), version 0.9.1 (tag `v0.9.1`, commit `c9fbaca`).

@@ -1192,7 +1192,10 @@ mod tests {
 
     #[test]
     fn test_load_encrypted_pem_rsa() {
-        let pem_path = std::path::Path::new("../../test-data/keys/cakey.pem");
+        let pem_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/cakey.pem"
+        ));
         if !pem_path.exists() {
             eprintln!("skipping test: {pem_path:?} not found");
             return;
@@ -1205,7 +1208,8 @@ mod tests {
 
     #[test]
     fn test_load_encrypted_pem_preserves_ec_and_dsa_public_keys() {
-        let fixtures = std::path::Path::new("../../test-data/keys");
+        let fixtures =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/keys"));
         for name in [
             "ec/ec-prime256v1",
             "ec/ec-prime384v1",
@@ -1235,7 +1239,10 @@ mod tests {
 
     #[test]
     fn test_load_encrypted_pem_wrong_password() {
-        let pem_path = std::path::Path::new("../../test-data/keys/cakey.pem");
+        let pem_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/cakey.pem"
+        ));
         if !pem_path.exists() {
             eprintln!("skipping test: {pem_path:?} not found");
             return;
@@ -1246,7 +1253,10 @@ mod tests {
 
     #[test]
     fn test_load_encrypted_pem_no_password() {
-        let pem_path = std::path::Path::new("../../test-data/keys/cakey.pem");
+        let pem_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/cakey.pem"
+        ));
         if !pem_path.exists() {
             eprintln!("skipping test: {pem_path:?} not found");
             return;
@@ -1257,7 +1267,10 @@ mod tests {
 
     #[test]
     fn test_load_pkcs12_rsa() {
-        let p12_path = std::path::Path::new("../../test-data/keys/rsa/rsa-2048-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/rsa/rsa-2048-key.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -1270,7 +1283,10 @@ mod tests {
 
     #[test]
     fn test_load_pkcs12_mldsa44() {
-        let p12_path = std::path::Path::new("../../test-data/keys/ml-dsa/ml-dsa-44-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/ml-dsa/ml-dsa-44-key.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -1282,8 +1298,10 @@ mod tests {
 
     #[test]
     fn test_load_pkcs12_dh() {
-        let p12_path =
-            std::path::Path::new("../../test-data/xmlenc11-interop-2012/DH-1024_SHA256WithDSA.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/xmlenc11-interop-2012/DH-1024_SHA256WithDSA.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -1300,7 +1318,10 @@ mod tests {
 
     #[test]
     fn test_load_dh_pem_private() {
-        let pem_path = std::path::Path::new("../../test-data/keys/dhx/dhx-rfc5114-3-first-key.pem");
+        let pem_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/dhx/dhx-rfc5114-3-first-key.pem"
+        ));
         if !pem_path.exists() {
             eprintln!("skipping test: {pem_path:?} not found");
             return;
@@ -1317,8 +1338,10 @@ mod tests {
 
     #[test]
     fn test_load_dh_pem_public() {
-        let pem_path =
-            std::path::Path::new("../../test-data/keys/dhx/dhx-rfc5114-3-second-pubkey.pem");
+        let pem_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/dhx/dhx-rfc5114-3-second-pubkey.pem"
+        ));
         if !pem_path.exists() {
             eprintln!("skipping test: {pem_path:?} not found");
             return;

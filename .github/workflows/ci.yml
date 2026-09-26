@@ -56,10 +56,6 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
-
       - name: Cargo cache
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
@@ -102,10 +98,6 @@ jobs:
         with:
           toolchain: stable
           components: clippy
-
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
 
       - name: Install AWS-LC native build dependencies
         run: |
@@ -171,10 +163,6 @@ jobs:
         with:
           toolchain: 1.88.0
 
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
-
       - name: Check workspace at MSRV
         run: cargo check --locked --workspace ${{ matrix.cargo_args }}
 
@@ -188,10 +176,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           toolchain: stable
-
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
       - name: Preserve historical DSig and XML Encryption parity with explicit RSA opt-in
@@ -211,10 +195,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           toolchain: stable
-
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
 
       - name: Install AWS-LC native build dependencies
         if: matrix.provider == 'aws-lc'
@@ -249,10 +229,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
         with:
           toolchain: stable
-
-      - name: Resolve pinned sibling review commits
-        shell: bash
-        run: python .github/scripts/setup-coordinated-stack.py
 
       - name: Install AWS-LC native build dependencies
         run: |

@@ -5512,7 +5512,8 @@ mod tests {
     // other signed XML documents originally from the Go signedxml test suite.
 
     /// Path to the signedxml test data directory (relative to crate root).
-    const SIGNEDXML_TESTDATA: &str = "../../test-data/signedxml";
+    const SIGNEDXML_TESTDATA: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/signedxml");
 
     /// Helper: load a test file, returning the content or skipping if not found.
     fn load_signedxml_testdata(filename: &str) -> String {
@@ -5917,19 +5918,19 @@ mod tests {
     /// The signed document with its inline signer chain.
     const X509DATA_TEST_XML: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/aleksey-xmldsig-01/x509data-test.xml"
+        "/tests/fixtures/aleksey-xmldsig-01/x509data-test.xml"
     ));
     /// The correct anchor (Aleksey test root) the inline chain terminates at.
     /// Only used by the `legacy-algorithms`-gated positive test below.
     #[cfg(feature = "legacy-algorithms")]
     const CACERT_PEM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/keys/cacert.pem"
+        "/tests/fixtures/keys/cacert.pem"
     ));
     /// An unrelated CA (Merlin) the inline chain does NOT terminate at.
     const WRONG_CA_PEM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/merlin-xmldsig-twenty-three/certs/ca.pem"
+        "/tests/fixtures/merlin-xmldsig-twenty-three/certs/ca.pem"
     ));
 
     /// Decode a single-certificate PEM to DER.

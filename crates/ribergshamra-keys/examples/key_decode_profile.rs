@@ -35,7 +35,7 @@ fn main() {
         .unwrap_or(5);
     assert!(iterations > 0 && samples > 0);
 
-    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test-data/keys");
+    let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/keys");
     for (label, path) in [
         ("encrypted_rsa2048", "rsa/rsa-2048-key.p8-pem"),
         ("encrypted_p384", "ec/ec-prime384v1-key.p8-pem"),

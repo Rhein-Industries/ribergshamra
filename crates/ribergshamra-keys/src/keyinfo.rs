@@ -969,7 +969,7 @@ mod tests {
     #[test]
     fn manager_lookup_uses_preloaded_key_with_inline_keyvalue() {
         let rsa = crate::loader::load_rsa_public_pem(include_bytes!(
-            "../../../test-data/keys/rsa/rsa-2048-pubkey.pem"
+            "../tests/fixtures/keys/rsa/rsa-2048-pubkey.pem"
         ))
         .expect("public interop fixture");
         let xml = format!(

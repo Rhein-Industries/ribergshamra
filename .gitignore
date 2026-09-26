@@ -1,1 +1,4 @@
 target/
+
+# Local Finder metadata is not part of source or published packages.
+.DS_Store

@@ -829,7 +829,10 @@ mod tests {
 
     #[test]
     fn test_parse_rsa_2048_p12() {
-        let p12_path = std::path::Path::new("../../test-data/keys/rsa/rsa-2048-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/rsa/rsa-2048-key.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -849,7 +852,10 @@ mod tests {
 
     #[test]
     fn test_parse_ec_p256_p12() {
-        let p12_path = std::path::Path::new("../../test-data/keys/ec/ec-prime256v1-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/ec/ec-prime256v1-key.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -864,7 +870,10 @@ mod tests {
 
     #[test]
     fn test_parse_rsa_4096_p12() {
-        let p12_path = std::path::Path::new("../../test-data/keys/rsa/rsa-4096-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/rsa/rsa-4096-key.p12"
+        ));
         if !p12_path.exists() {
             eprintln!("skipping test: {p12_path:?} not found");
             return;
@@ -878,7 +887,10 @@ mod tests {
 
     #[test]
     fn test_wrong_password_fails_mac() {
-        let p12_path = std::path::Path::new("../../test-data/keys/rsa/rsa-2048-key.p12");
+        let p12_path = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/keys/rsa/rsa-2048-key.p12"
+        ));
         if !p12_path.exists() {
             return;
         }
