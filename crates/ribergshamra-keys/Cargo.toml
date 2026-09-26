@@ -58,8 +58,13 @@ legacy-algorithms = [
     "ritsp-ltv/legacy-algorithms",
 ]
 
+# Explicit compatibility opt-in to unpatched RustCrypto RSA decryption.
+# Independent of legacy-algorithms and never enabled by default.
+legacy-rsa-decryption = ["ribergshamra-crypto/legacy-rsa-decryption", "riptering/legacy-rsa-decryption", "ribergshamra-pkcs12/legacy-rsa-decryption"]
+
 [dependencies]
 ribergshamra-core.workspace = true
+ribergshamra-xml.workspace = true
 ribergshamra-crypto.workspace = true
 riptering.workspace = true
 ed25519-dalek = { workspace = true, optional = true }

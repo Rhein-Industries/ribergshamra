@@ -4,31 +4,23 @@
 # fix looks like, and who has to move for ribergshamra to drop the entry.
 # This file started as a mirror of kryptering's .cargo/audit.toml (now
 # riptering's, Rhein Industries' maintained fork of kryptering) — we carry
-# ignores for the same transitive crates (rsa 0.9, rand 0.8 via
-# num-bigint-dig) that flow through both dependency trees.
+# the unresolved RSA advisory that also flows through riptering. Patched
+# advisory entries are removed instead of retained as broad exceptions.
 
 [advisories]
 ignore = [
-    # RUSTSEC-2023-0071 — rsa 0.9.x "Marvin Attack" timing sidechannel.
-    # Severity 5.9 (medium). No fixed upgrade is available in the 0.9.x
-    # line; RustCrypto's rewrite lands in rsa 0.10, which is not yet
-    # released. ribergshamra's threat model for XML-DSig / XML-Enc users
-    # who need timing-side-channel resistance should route RSA private
-    # operations through an HSM via riptering::pkcs11 rather than
-    # relying on the software path.
-    # Upstream: https://github.com/RustCrypto/RSA/issues/19
+    # RUSTSEC-2023-0071 — RustCrypto RSA timing side channel.
+    # Rechecked 2026-09-26: no patched version, including the 0.10
+    # prerelease line. Blinding and the bigint migration are not closure.
+    # RustCrypto RSA decryption is refused by default. The separate
+    # legacy-rsa-decryption compatibility opt-in retains the timing risk;
+    # signing timing assurance also remains unresolved. This exception records
+    # unresolved risk; passing cargo-audit does not establish remediation.
+    # Upstream: https://github.com/RustCrypto/RSA/issues/626
     "RUSTSEC-2023-0071",
 
-    # RUSTSEC-2026-0097 — rand 0.8.5 "unsound with a custom logger using
-    # rand::rng()". Pulled in transitively via num-bigint-dig (which rsa
-    # 0.9 and dsa 0.6 use) and also directly. The unsound pattern
-    # requires a caller to install a custom `log::Log` implementation
-    # that itself calls `rand::rng()`; ribergshamra installs no logger
-    # and does not reach for `rand::rng()` in any such context. The fix
-    # is in rand 0.9, but num-bigint-dig pins rand 0.8, so even bumping
-    # our direct dep would not remove the transitive 0.8 pull. Revisit
-    # when rsa / dsa / num-bigint-dig move to rand 0.9.
-    "RUSTSEC-2026-0097",
+    # RUSTSEC-2026-0097 is patched in rand >= 0.8.6. This workspace locks
+    # rand 0.8.8, so the old rand advisory exception has been removed.
 
     # Note — ml-dsa advisory posture:
     # RUSTSEC-2025-0144 (timing side-channel in ML-DSA decomposition, fixed

@@ -13,6 +13,7 @@
 //! after a silent map overwrite.
 
 pub mod document;
+pub mod limits;
 pub mod nodeset;
 pub mod writer;
 pub mod xpath;

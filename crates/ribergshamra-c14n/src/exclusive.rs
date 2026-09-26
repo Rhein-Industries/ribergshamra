@@ -12,7 +12,7 @@
 //! 3. The prefix appears in the InclusiveNamespaces PrefixList, OR
 //! 4. It's the default namespace and the element is in that namespace.
 
-use crate::render::{Attr, NsDecl};
+use crate::render::{write_sorted_attributes, NsDecl};
 use crate::{escape, C14nSink};
 use ribergshamra_core::Error;
 use ribergshamra_xml::nodeset::NodeSet;
@@ -65,6 +65,7 @@ pub fn canonicalize_to<S: AsRef<str>, W: C14nSink>(
         .iter()
         .map(|s| s.as_ref().to_owned())
         .collect();
+    ribergshamra_xml::limits::validate_document(doc)?;
     let mut ctx = ExcC14nContext {
         doc,
         with_comments,
@@ -73,7 +74,9 @@ pub fn canonicalize_to<S: AsRef<str>, W: C14nSink>(
     };
     let mut rendered_ns = BTreeMap::new();
     let mut inscope_ns = BTreeMap::new();
-    ctx.process_node(doc.root(), output, &mut rendered_ns, &mut inscope_ns)
+    let mut limited = crate::LimitedSink::new(output);
+    ctx.process_node(doc.root(), &mut limited, &mut rendered_ns, &mut inscope_ns)?;
+    limited.finish()
 }
 
 struct ExcC14nContext<'a, 'doc> {
@@ -107,6 +110,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
         rendered_ns: &mut BTreeMap<String, String>,
         inscope_ns: &mut BTreeMap<String, String>,
     ) -> Result<(), Error> {
+        output.check()?;
         match self.doc.node_kind(id) {
             Some(NodeKind::Document) => {
                 for child in self.doc.children_iter(id) {
@@ -185,7 +189,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
             }
             _ => {}
         }
-        Ok(())
+        output.check()
     }
 
     /// Process an element according to Exclusive C14N visibility rules.
@@ -202,6 +206,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
         rendered_ns: &mut BTreeMap<String, String>,
         inscope_ns: &mut BTreeMap<String, String>,
     ) -> Result<(), Error> {
+        output.check()?;
         let visible = self.is_visible(id);
 
         if visible {
@@ -213,7 +218,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
             utilized_prefixes.insert(elem_prefix.clone());
 
             // 2. Prefixes used by attributes
-            {
+            if !self.node_set.is_some_and(|ns| ns.excludes_attrs()) {
                 let elem = self.doc.element(id).unwrap();
                 for attr in &elem.attributes {
                     if let Some(prefix) = get_attr_prefix(attr) {
@@ -269,44 +274,24 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
             }
             ns_decls.sort();
 
-            // Collect attributes
-            let mut attrs: Vec<Attr> = Vec::new();
-            {
-                let elem = self.doc.element(id).unwrap();
-                for attr in &elem.attributes {
-                    let ns_uri = attr.name.namespace_uri.as_deref().unwrap_or("");
-                    let qname = if let Some(prefix) = get_attr_prefix(attr) {
-                        if prefix.is_empty() {
-                            attr.name.local_name.to_string()
-                        } else {
-                            format!("{}:{}", prefix, attr.name.local_name)
-                        }
-                    } else {
-                        attr.name.local_name.to_string()
-                    };
-                    attrs.push(Attr {
-                        ns_uri: ns_uri.to_owned(),
-                        local_name: attr.name.local_name.to_string(),
-                        qualified_name: qname,
-                        value: attr.value.to_string(),
-                    });
-                }
-            }
-            attrs.sort();
-
             // Build qualified element name
             let elem_name = qualified_element_name(self.doc, id);
 
             // Output start tag
             output.write_byte(b'<');
             output.write(elem_name.as_bytes());
+            output.check()?;
             for ns_decl in &ns_decls {
                 ns_decl.write_to(output);
+                output.check()?;
             }
-            for attr in &attrs {
-                attr.write_to(output);
+            // Exclusive C14N never synthesizes inherited attributes, so sort
+            // references to the DOM attributes and render their values directly.
+            if !self.node_set.is_some_and(|ns| ns.excludes_attrs()) {
+                write_sorted_attributes(&self.doc.element(id).unwrap().attributes, output)?;
             }
             output.write_byte(b'>');
+            output.check()?;
 
             // Update the shared rendered namespace context for children. An
             // undo log restores the parent bindings after this subtree,
@@ -390,6 +375,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                 ns_decls.sort();
                 for ns_decl in &ns_decls {
                     ns_decl.write_to(output);
+                    output.check()?;
                 }
             }
 
@@ -399,7 +385,7 @@ impl<'a, 'doc> ExcC14nContext<'a, 'doc> {
                 self.process_node(child, output, rendered_ns, inscope_ns)?;
             }
         }
-        Ok(())
+        output.check()
     }
 }
 
@@ -518,6 +504,15 @@ fn qualified_element_name(doc: &Document<'_>, id: NodeId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn excluded_attributes_do_not_render_or_utilize_namespaces() {
+        let doc = uppsala::parse("<r xmlns:a='urn:attr' a:secret='hidden' id='hidden'/>").unwrap();
+        let mut subset = NodeSet::all(&doc);
+        subset.set_exclude_attrs(true);
+        let result = canonicalize(&doc, false, Some(&subset), &[] as &[String]).unwrap();
+        assert_eq!(String::from_utf8(result).unwrap(), "<r></r>");
+    }
 
     // --- W3C C14N Spec Examples tested with Exclusive C14N ---
     // Ported from Go signedxml library canonicalization_test.go.

@@ -6,6 +6,10 @@ use ribergshamra_core::Error;
 use ribergshamra_keys::KeysManager;
 use riptering::traits::{Signer, Verifier};
 
+/// Maximum number of bytes loaded from one detached-reference or retrieved
+/// certificate file. Files must also be regular files.
+pub const MAX_EXTERNAL_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
 /// Context for XML-DSig operations.
 pub struct DsigContext {
     /// Keys manager for key lookup.
@@ -15,9 +19,11 @@ pub struct DsigContext {
     /// Explicit URL-to-file mappings for external URI resolution.
     ///
     /// Prefer these mappings for detached `<Reference>` bytes when the URI is
-    /// not a simple document-relative file. Signing and verification reject
-    /// absolute paths, URI schemes, and parent-directory traversal for local
-    /// fallback; verifier debug output redacts detached bytes.
+    /// not a simple document-relative file. Signing and verification read local
+    /// relative paths only with an explicit `base_dir`; neither falls back to
+    /// the process's working directory. External files must be regular
+    /// files no larger than [`MAX_EXTERNAL_FILE_BYTES`]. Verifier debug output
+    /// redacts detached bytes.
     pub url_maps: Vec<(String, String)>,
     /// Minimum HMAC output length in bits (0 = use spec default).
     pub hmac_min_out_len: usize,
@@ -26,9 +32,13 @@ pub struct DsigContext {
     /// Base directory for signing-time relative references, verifier
     /// document-relative references, and retrieval-method key resolution.
     ///
-    /// This is not an unrestricted filesystem root: signing and verifier
-    /// `<Reference>` resolution reject URI schemes, absolute paths, and `..`
-    /// traversal for local-file fallback.
+    /// Signing, verification, and key retrieval require this to authorize
+    /// relative file access; `None` disables relative filesystem reads. This is not an
+    /// unrestricted filesystem root: URI schemes, absolute paths, `..`
+    /// traversal, and symlink escapes are rejected for local-file lookup.
+    /// On Unix, reads walk canonical path components through directory handles
+    /// without following further symlinks. On other platforms, callers must
+    /// keep the configured directories unchanged during each operation.
     pub base_dir: Option<String>,
     /// Insecure mode: skip all certificate validation.
     pub insecure: bool,
@@ -263,10 +273,9 @@ impl DsigContext {
     /// Set base directory for signing-time relative URIs, verifier
     /// document-relative URIs, and key retrieval.
     ///
-    /// Signing and verifier `<Reference>` resolution try simple relative paths
-    /// under this directory first, then the current working directory. URI
-    /// schemes, absolute paths, and parent traversal are rejected for local-file
-    /// fallback.
+    /// Signing, verification, and key retrieval resolve simple relative paths
+    /// only under this directory. URI schemes, absolute paths, parent traversal,
+    /// and symlink escapes are rejected for relative-file lookup.
     pub fn with_base_dir(mut self, dir: impl Into<String>) -> Self {
         self.base_dir = Some(dir.into());
         self
@@ -304,6 +313,26 @@ pub(crate) fn url_map_matches(uri: &str, map_url: &str) -> bool {
         || uri
             .strip_prefix(map_url)
             .is_some_and(|suffix| suffix.starts_with('#'))
+}
+
+/// Bound document-selected transform work before entering either digest path.
+pub(crate) fn validate_reference_transforms(
+    doc: &uppsala::Document<'_>,
+    transforms: Option<uppsala::NodeId>,
+) -> Result<(), Error> {
+    let count = transforms.map_or(0, |node| {
+        doc.children_iter(node)
+            .filter(|&child| {
+                doc.element(child).is_some_and(|element| {
+                    element.name.local_name.as_ref() == ribergshamra_core::ns::node::TRANSFORM
+                })
+            })
+            .count()
+    });
+    ribergshamra_transforms::pipeline::validate_transform_count(
+        count,
+        ribergshamra_transforms::pipeline::DEFAULT_MAX_TRANSFORMS,
+    )
 }
 
 /// Return whether `uri` begins with an RFC-style scheme name.
@@ -359,31 +388,395 @@ pub(crate) fn local_reference_relative_path(uri: &str) -> Result<Option<&std::pa
 /// Read `relative_path` under `base` only when canonical resolution stays below
 /// that same canonical base directory.
 ///
-/// This prevents local `<Reference URI>` resolution from following a symlink
-/// inside the lookup directory to an arbitrary local file.
+/// Initial canonicalization permits symlinks whose targets stay inside the
+/// base. On Unix the subsequent read is anchored to the canonical base's open
+/// directory handle, and every remaining path component is opened without
+/// following symlinks. Containment is never checked on one path and then used
+/// to authorize a fresh path-based read.
+///
+/// On non-Unix platforms the standard-library fallback requires caller-owned
+/// directories that are not concurrently mutated. This policy does not freeze
+/// file contents or prevent a directory owner from creating hard links.
 pub(crate) fn read_existing_relative_file(
     base: &std::path::Path,
     relative_path: &std::path::Path,
     uri: &str,
 ) -> Result<Option<Vec<u8>>, Error> {
     let full = base.join(relative_path);
-    if !full.exists() {
-        return Ok(None);
-    }
-
+    let canonical_full = match full.canonicalize() {
+        Ok(path) => path,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(external_file_io_error(&full, error)),
+    };
     let canonical_base = base
         .canonicalize()
-        .map_err(|e| Error::Other(format!("{}: {e}", base.display())))?;
-    let canonical_full = full
-        .canonicalize()
-        .map_err(|e| Error::Other(format!("{}: {e}", full.display())))?;
-    if !canonical_full.starts_with(&canonical_base) {
-        return Err(Error::InvalidUri(format!(
+        .map_err(|error| external_file_io_error(base, error))?;
+    let relative = canonical_full.strip_prefix(&canonical_base).map_err(|_| {
+        Error::InvalidUri(format!(
             "local file Reference URI escapes base directory: {uri}"
+        ))
+    })?;
+    #[cfg(not(unix))]
+    validate_external_file_path(&canonical_full)?;
+
+    #[cfg(unix)]
+    let file = {
+        let directory = open_canonical_directory(&canonical_base)?;
+        open_relative_external_file(&directory, relative, &canonical_full)?
+    };
+    #[cfg(not(unix))]
+    let file = std::fs::File::open(canonical_base.join(relative))
+        .map_err(|error| external_file_io_error(&canonical_full, error))?;
+
+    read_external_file_handle(file, &canonical_full).map(Some)
+}
+
+/// Read externally referenced bytes with a regular-file check and a hard cap.
+///
+/// Check the path before opening it so devices, sockets, and FIFOs are rejected
+/// without reading them. Unix opens walk every canonical parent component with
+/// `O_DIRECTORY | O_NOFOLLOW` and open the final component with `O_NOFOLLOW |
+/// O_NONBLOCK`; replacing any component with a symlink cannot redirect the
+/// open. Initial symlinks in caller-selected mappings remain supported by
+/// canonicalizing the mapping once before that walk.
+///
+/// The opened handle is checked independently, and the read has its own cap so
+/// concurrent file growth cannot exceed the byte limit. On non-Unix platforms,
+/// callers must keep mapped directories unchanged during each operation.
+pub(crate) fn read_regular_external_file(path: &std::path::Path) -> Result<Vec<u8>, Error> {
+    let canonical_path = path
+        .canonicalize()
+        .map_err(|error| external_file_io_error(path, error))?;
+    #[cfg(not(unix))]
+    validate_external_file_path(&canonical_path)?;
+
+    #[cfg(unix)]
+    let file = {
+        let parent = canonical_path.parent().ok_or_else(|| {
+            Error::InvalidUri(format!(
+                "external URI file has no parent: {}",
+                path.display()
+            ))
+        })?;
+        let name = canonical_path.file_name().ok_or_else(|| {
+            Error::InvalidUri(format!("external URI file has no name: {}", path.display()))
+        })?;
+        let directory = open_canonical_directory(parent)?;
+        open_relative_external_file(&directory, std::path::Path::new(name), path)?
+    };
+    #[cfg(not(unix))]
+    let file = std::fs::File::open(&canonical_path)
+        .map_err(|error| external_file_io_error(path, error))?;
+
+    read_external_file_handle(file, path)
+}
+
+#[cfg(not(unix))]
+fn validate_external_file_path(path: &std::path::Path) -> Result<(), Error> {
+    let metadata = std::fs::metadata(path).map_err(|error| external_file_io_error(path, error))?;
+    validate_external_file_metadata(&metadata, path)
+}
+
+fn read_external_file_handle(
+    file: std::fs::File,
+    path: &std::path::Path,
+) -> Result<Vec<u8>, Error> {
+    use std::io::Read;
+
+    let metadata = file
+        .metadata()
+        .map_err(|error| external_file_io_error(path, error))?;
+    validate_external_file_metadata(&metadata, path)?;
+
+    let mut bytes = Vec::new();
+    file.take(MAX_EXTERNAL_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| external_file_io_error(path, error))?;
+    if bytes.len() as u64 > MAX_EXTERNAL_FILE_BYTES {
+        return Err(external_file_size_error(path));
+    }
+    Ok(bytes)
+}
+
+/// Start at the filesystem root and open each canonical directory component
+/// separately. Holding each parent handle avoids re-resolving earlier names.
+#[cfg(unix)]
+fn open_canonical_directory(path: &std::path::Path) -> Result<std::fs::File, Error> {
+    use rustix::fs::{open, openat, Mode, OFlags};
+    use std::path::Component;
+
+    if !path.is_absolute() {
+        return Err(Error::InvalidUri(format!(
+            "external URI directory is not absolute: {}",
+            path.display()
         )));
     }
+    let flags = OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+    let mut directory = std::fs::File::from(
+        open(std::path::Path::new("/"), flags, Mode::empty())
+            .map_err(|error| external_file_io_error(path, error))?,
+    );
+    for component in path.components() {
+        match component {
+            Component::RootDir => {}
+            Component::Normal(name) => {
+                directory = std::fs::File::from(
+                    openat(&directory, name, flags, Mode::empty())
+                        .map_err(|error| external_file_io_error(path, error))?,
+                );
+            }
+            _ => return Err(external_file_component_error(path)),
+        }
+    }
+    Ok(directory)
+}
 
-    let data = std::fs::read(&canonical_full)
-        .map_err(|e| Error::Other(format!("{}: {e}", canonical_full.display())))?;
-    Ok(Some(data))
+/// Open a canonical target relative to an already authorized base directory.
+/// Directory and leaf symlinks are rejected even when they point inside it;
+/// supported initial symlinks were resolved by the preceding canonicalization.
+#[cfg(unix)]
+fn open_relative_external_file(
+    directory: &std::fs::File,
+    relative: &std::path::Path,
+    display_path: &std::path::Path,
+) -> Result<std::fs::File, Error> {
+    use rustix::fs::{openat, statat, AtFlags, FileType, Mode, OFlags};
+    use std::path::Component;
+
+    let mut directory = directory
+        .try_clone()
+        .map_err(|error| external_file_io_error(display_path, error))?;
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        let Component::Normal(name) = component else {
+            return Err(external_file_component_error(display_path));
+        };
+        let mut flags = OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC;
+        if components.peek().is_some() {
+            flags |= OFlags::DIRECTORY;
+        } else {
+            // Check through the same held parent used for opening; a path-based
+            // metadata check would reintroduce ambient parent resolution.
+            let metadata = statat(&directory, name, AtFlags::SYMLINK_NOFOLLOW)
+                .map_err(|error| external_file_io_error(display_path, error))?;
+            if FileType::from_raw_mode(metadata.st_mode) != FileType::RegularFile {
+                return Err(external_file_type_error(display_path));
+            }
+            let size = u64::try_from(metadata.st_size)
+                .map_err(|_| external_file_size_error(display_path))?;
+            if size > MAX_EXTERNAL_FILE_BYTES {
+                return Err(external_file_size_error(display_path));
+            }
+            flags |= OFlags::NONBLOCK;
+        }
+        let file = std::fs::File::from(
+            openat(&directory, name, flags, Mode::empty())
+                .map_err(|error| external_file_io_error(display_path, error))?,
+        );
+        if components.peek().is_none() {
+            return Ok(file);
+        }
+        directory = file;
+    }
+    Err(external_file_component_error(display_path))
+}
+
+#[cfg(unix)]
+fn external_file_component_error(path: &std::path::Path) -> Error {
+    Error::InvalidUri(format!(
+        "external URI path must contain only canonical file components: {}",
+        path.display()
+    ))
+}
+
+fn external_file_io_error(path: &std::path::Path, error: impl std::fmt::Display) -> Error {
+    Error::Other(format!("{}: {error}", path.display()))
+}
+
+fn validate_external_file_metadata(
+    metadata: &std::fs::Metadata,
+    path: &std::path::Path,
+) -> Result<(), Error> {
+    if !metadata.is_file() {
+        return Err(external_file_type_error(path));
+    }
+    if metadata.len() > MAX_EXTERNAL_FILE_BYTES {
+        return Err(external_file_size_error(path));
+    }
+    Ok(())
+}
+
+fn external_file_type_error(path: &std::path::Path) -> Error {
+    Error::InvalidUri(format!(
+        "external URI file must be a regular file: {}",
+        path.display()
+    ))
+}
+
+fn external_file_size_error(path: &std::path::Path) -> Error {
+    Error::InvalidUri(format!(
+        "external URI file exceeds {MAX_EXTERNAL_FILE_BYTES}-byte limit: {}",
+        path.display()
+    ))
+}
+
+#[cfg(test)]
+mod external_file_policy_tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "ribergshamra-external-policy-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path.canonicalize().unwrap())
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn nested_regular_file_and_missing_relative_file() {
+        let directory = TestDirectory::new();
+        std::fs::create_dir(directory.0.join("nested")).unwrap();
+        let path = directory.0.join("nested/data");
+        std::fs::write(&path, b"bounded detached bytes").unwrap();
+        assert_eq!(
+            read_existing_relative_file(&directory.0, Path::new("nested/data"), "nested/data")
+                .unwrap(),
+            Some(b"bounded detached bytes".to_vec())
+        );
+        assert_eq!(
+            read_existing_relative_file(&directory.0, Path::new("missing"), "missing").unwrap(),
+            None
+        );
+        assert_eq!(
+            read_regular_external_file(&path).unwrap(),
+            b"bounded detached bytes"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initial_contained_symlinks_and_explicit_mapped_symlinks_remain_supported() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        let outside = TestDirectory::new();
+        std::fs::create_dir(directory.0.join("nested")).unwrap();
+        std::fs::write(directory.0.join("nested/data"), b"inside").unwrap();
+        std::fs::write(outside.0.join("data"), b"explicitly mapped").unwrap();
+        symlink("nested/data", directory.0.join("leaf-link")).unwrap();
+        symlink("nested", directory.0.join("directory-link")).unwrap();
+        symlink(outside.0.join("data"), directory.0.join("outside-link")).unwrap();
+        for relative in ["leaf-link", "directory-link/data"] {
+            assert_eq!(
+                read_existing_relative_file(&directory.0, Path::new(relative), relative).unwrap(),
+                Some(b"inside".to_vec())
+            );
+        }
+        assert!(read_existing_relative_file(
+            &directory.0,
+            Path::new("outside-link"),
+            "outside-link"
+        )
+        .is_err());
+        // An exact caller-selected mapping authorizes its selected target.
+        assert_eq!(
+            read_regular_external_file(&directory.0.join("outside-link")).unwrap(),
+            b"explicitly mapped"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn canonical_directory_walk_rejects_symlink_parent_components() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        std::fs::create_dir_all(directory.0.join("actual/child")).unwrap();
+        symlink("actual", directory.0.join("alias")).unwrap();
+        assert!(open_canonical_directory(&directory.0.join("actual/child")).is_ok());
+        assert!(open_canonical_directory(&directory.0.join("alias/child")).is_err());
+        assert!(open_canonical_directory(Path::new("relative")).is_err());
+        assert!(open_canonical_directory(&directory.0.join("actual/../actual")).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn anchored_file_open_rejects_leaf_and_parent_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let directory = TestDirectory::new();
+        std::fs::create_dir(directory.0.join("nested")).unwrap();
+        std::fs::write(directory.0.join("nested/data"), b"inside").unwrap();
+        symlink("nested/data", directory.0.join("leaf-link")).unwrap();
+        symlink("nested", directory.0.join("directory-link")).unwrap();
+        let handle = open_canonical_directory(&directory.0).unwrap();
+        for relative in [
+            "leaf-link",
+            "directory-link/data",
+            "nested",
+            "../data",
+            "/data",
+            "",
+        ] {
+            assert!(
+                open_relative_external_file(&handle, Path::new(relative), &directory.0).is_err(),
+                "accepted noncanonical component path {relative:?}"
+            );
+        }
+        let file = open_relative_external_file(
+            &handle,
+            Path::new("nested/data"),
+            &directory.0.join("nested/data"),
+        )
+        .unwrap();
+        assert_eq!(
+            read_external_file_handle(file, &directory.0).unwrap(),
+            b"inside"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn final_file_handle_is_nonblocking_and_close_on_exec() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("data");
+        std::fs::write(&path, b"inside").unwrap();
+        let directory_handle = open_canonical_directory(&directory.0).unwrap();
+        let file =
+            open_relative_external_file(&directory_handle, Path::new("data"), &path).unwrap();
+        assert!(rustix::fs::fcntl_getfl(&file)
+            .unwrap()
+            .contains(rustix::fs::OFlags::NONBLOCK));
+        assert!(rustix::io::fcntl_getfd(&file)
+            .unwrap()
+            .contains(rustix::io::FdFlags::CLOEXEC));
+    }
+
+    #[test]
+    fn opened_handle_rejects_nonregular_and_oversized_files() {
+        let directory = TestDirectory::new();
+        assert!(read_regular_external_file(&directory.0).is_err());
+        let path = directory.0.join("large");
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_EXTERNAL_FILE_BYTES).unwrap();
+        assert!(validate_external_file_metadata(&file.metadata().unwrap(), &path).is_ok());
+        file.set_len(MAX_EXTERNAL_FILE_BYTES + 1).unwrap();
+        assert!(read_external_file_handle(file, &path).is_err());
+        assert!(read_regular_external_file(&path).is_err());
+    }
 }

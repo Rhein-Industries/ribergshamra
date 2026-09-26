@@ -39,6 +39,19 @@ pub trait C14nSink {
     /// intentionally a no-op so stream-like sinks do not need a fake capacity.
     fn reserve(&mut self, _additional: usize) {}
 
+    /// Report a deferred write failure or resource limit.
+    ///
+    /// Canonicalization checks this at node and namespace/attribute boundaries
+    /// and stops traversal on error. Existing infallible sinks can use the
+    /// default implementation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the sink cannot accept further canonical bytes.
+    fn check(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// Write canonicalized bytes to the sink.
     fn write(&mut self, bytes: &[u8]);
 
@@ -65,6 +78,54 @@ impl C14nSink for Vec<u8> {
     /// Append one canonical byte to the output buffer.
     fn write_byte(&mut self, byte: u8) {
         self.push(byte);
+    }
+}
+
+/// Count output before forwarding it so namespace inheritance and escaping
+/// cannot produce an unbounded buffer or digest stream from a small DOM.
+pub(crate) struct LimitedSink<'a, W> {
+    inner: &'a mut W,
+    bytes: usize,
+    limit: usize,
+    exceeded: bool,
+}
+
+impl<'a, W: C14nSink> LimitedSink<'a, W> {
+    pub(crate) fn new(inner: &'a mut W) -> Self {
+        Self {
+            inner,
+            bytes: 0,
+            limit: ribergshamra_xml::limits::MAX_OUTPUT_BYTES,
+            exceeded: false,
+        }
+    }
+
+    pub(crate) fn finish(self) -> Result<(), Error> {
+        self.check()
+    }
+}
+
+impl<W: C14nSink> C14nSink for LimitedSink<'_, W> {
+    fn check(&self) -> Result<(), Error> {
+        if self.exceeded {
+            return Err(Error::Transform(
+                "canonical output exceeds byte limit".into(),
+            ));
+        }
+        self.inner.check()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        if self.exceeded {
+            return;
+        }
+        self.bytes = self.bytes.saturating_add(bytes.len());
+        if self.bytes > self.limit {
+            self.exceeded = true;
+        }
+        if !self.exceeded {
+            self.inner.write(bytes);
+        }
     }
 }
 
@@ -161,7 +222,7 @@ pub fn canonicalize<S: AsRef<str>>(
     node_set: Option<&NodeSet>,
     inclusive_prefixes: &[S],
 ) -> Result<Vec<u8>, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
     canonicalize_doc(&doc, mode, node_set, inclusive_prefixes)
 }
 
@@ -217,5 +278,154 @@ pub fn canonicalize_doc_to<S: AsRef<str>, W: C14nSink>(
             inclusive_prefixes,
             output,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limited_sink_rejects_a_write_before_growing_output() {
+        let mut output = Vec::new();
+        let mut sink = LimitedSink {
+            inner: &mut output,
+            bytes: 0,
+            limit: 3,
+            exceeded: false,
+        };
+        sink.write(b"ab");
+        sink.write(b"cd");
+        assert!(sink.check().is_err());
+        sink.write(b"later");
+        assert!(sink.finish().is_err());
+        assert_eq!(output, b"ab");
+    }
+
+    #[test]
+    fn sink_errors_stop_before_the_next_namespace_attribute_or_node() {
+        struct StopSink {
+            bytes: Vec<u8>,
+            stop: &'static [u8],
+        }
+        impl C14nSink for StopSink {
+            fn write(&mut self, bytes: &[u8]) {
+                self.bytes.extend_from_slice(bytes);
+            }
+            fn check(&self) -> Result<(), Error> {
+                if self
+                    .bytes
+                    .windows(self.stop.len())
+                    .any(|window| window == self.stop)
+                {
+                    Err(Error::Transform("sink requested stop".into()))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        for (xml, stop, later) in [
+            (
+                "<r a='first' z='last'><later/></r>",
+                b"a=\"first\"".as_slice(),
+                b"z=\"last\"".as_slice(),
+            ),
+            (
+                "<r xmlns:a='urn:first' xmlns:z='urn:last' a:x='1' z:x='2'><later/></r>",
+                b"xmlns:a=\"urn:first\"".as_slice(),
+                b"xmlns:z=".as_slice(),
+            ),
+        ] {
+            let doc = uppsala::parse(xml).unwrap();
+            let all_nodes = NodeSet::all(&doc);
+            for subset in [None, Some(&all_nodes)] {
+                for mode in [
+                    C14nMode::Inclusive,
+                    C14nMode::InclusiveWithComments,
+                    C14nMode::Inclusive11,
+                    C14nMode::Inclusive11WithComments,
+                    C14nMode::Exclusive,
+                    C14nMode::ExclusiveWithComments,
+                ] {
+                    let mut sink = StopSink {
+                        bytes: Vec::new(),
+                        stop,
+                    };
+                    let error = canonicalize_doc_to(&doc, mode, subset, &[] as &[&str], &mut sink)
+                        .unwrap_err();
+                    assert!(error.to_string().contains("sink requested stop"), "{mode}");
+                    assert!(
+                        !sink
+                            .bytes
+                            .windows(later.len())
+                            .any(|window| window == later),
+                        "{mode}"
+                    );
+                    assert!(
+                        !sink
+                            .bytes
+                            .windows(b"later".len())
+                            .any(|window| window == b"later"),
+                        "{mode}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn whole_document_matches_all_node_subset_for_every_mode() {
+        // The whole-document inclusive path borrows attributes; its all-node
+        // subset counterpart still materializes them for inheritance handling.
+        // Namespace aliases, xml:* attributes, character references, and
+        // outside-root nodes must produce the same canonical bytes.
+        let xml = r#"<?before value?><r xmlns="urn:root" xmlns:z="urn:a" xmlns:a="urn:z" xml:lang="en" xml:base="https://example.test/" z:b="2" plain="café &amp;&lt;&quot;&#x9;&#xA;&#xD;" a:a="3" z:a="1"><child xml:space="preserve"><!--comment-->text &amp; value</child><plain xmlns=""/></r><?after value?>"#;
+        let doc = uppsala::parse(xml).unwrap();
+        let all_nodes = NodeSet::all(&doc);
+        for mode in [
+            C14nMode::Inclusive,
+            C14nMode::InclusiveWithComments,
+            C14nMode::Inclusive11,
+            C14nMode::Inclusive11WithComments,
+            C14nMode::Exclusive,
+            C14nMode::ExclusiveWithComments,
+        ] {
+            let whole = canonicalize_doc(&doc, mode, None, &["a"]).unwrap();
+            let subset = canonicalize_doc(&doc, mode, Some(&all_nodes), &["a"]).unwrap();
+            assert_eq!(whole, subset, "{mode}");
+        }
+    }
+
+    #[test]
+    fn inclusive_subset_retains_inherited_xml_attributes_and_base_resolution() {
+        let xml = r#"<r xmlns:n="urn:test" xml:lang="en" xml:base="https://example.test/"><hidden xml:lang="fr" xml:base="scope/"><n:leaf beta="2" alpha="1" xml:base="item"/></hidden></r>"#;
+        let doc = uppsala::parse(xml).unwrap();
+        let leaf = doc.get_elements_by_tag_name_ns("urn:test", "leaf")[0];
+        let mut subset = NodeSet::tree_with_comments(leaf, &doc);
+        let prefixes: &[&str] = &[];
+        for (mode, base) in [
+            (C14nMode::Inclusive, "item"),
+            (C14nMode::InclusiveWithComments, "item"),
+            (C14nMode::Inclusive11, "https://example.test/scope/item"),
+            (
+                C14nMode::Inclusive11WithComments,
+                "https://example.test/scope/item",
+            ),
+        ] {
+            let result = canonicalize_doc(&doc, mode, Some(&subset), prefixes).unwrap();
+            assert_eq!(
+                String::from_utf8(result).unwrap(),
+                format!(
+                    r#"<n:leaf xmlns:n="urn:test" alpha="1" beta="2" xml:base="{base}" xml:lang="fr"></n:leaf>"#
+                ),
+                "{mode}"
+            );
+        }
+
+        subset.set_exclude_attrs(true);
+        for mode in [C14nMode::Inclusive, C14nMode::Inclusive11] {
+            let result = canonicalize_doc(&doc, mode, Some(&subset), prefixes).unwrap();
+            assert_eq!(result, br#"<n:leaf xmlns:n="urn:test"></n:leaf>"#, "{mode}");
+        }
     }
 }

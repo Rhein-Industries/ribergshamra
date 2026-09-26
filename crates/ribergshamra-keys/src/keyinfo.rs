@@ -4,7 +4,7 @@
 
 use crate::key::{Key, KeyData, KeyUsage};
 use crate::manager::KeysManager;
-use der::{Decode, Encode};
+use der::{Decode, Encode, Tagged};
 use ribergshamra_core::{ns, Error};
 use uppsala::{Document, NodeId};
 
@@ -59,6 +59,7 @@ pub fn resolve_key_info<'a>(
     doc: &Document<'_>,
     manager: &'a KeysManager,
 ) -> Result<&'a Key, Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     // Try <KeyName> first
     for child in doc.children(key_info_node) {
         let elem = match doc.element(child) {
@@ -79,98 +80,134 @@ pub fn resolve_key_info<'a>(
         }
     }
 
-    // Try <X509Data><X509IssuerSerial> — match cert by issuer+serial
+    // IssuerSerial is an explicit selector. Both fields must bind the same
+    // loaded certificate; an unmatched selector must not choose the first key.
+    let mut has_selector = false;
     for child in doc.children(key_info_node) {
-        let elem = match doc.element(child) {
-            Some(e) => e,
-            None => continue,
+        let Some(elem) = doc.element(child) else {
+            continue;
         };
-        let ns_uri = elem.name.namespace_uri.as_deref().unwrap_or("");
-        let local = &*elem.name.local_name;
-
-        if local == ns::node::X509_DATA && (ns_uri == ns::DSIG || ns_uri.is_empty()) {
-            // Collect serial numbers from X509IssuerSerial elements
-            for issuer_serial in doc.children(child) {
-                let is_elem = match doc.element(issuer_serial) {
-                    Some(e) => e,
-                    None => continue,
+        let namespace = elem.name.namespace_uri.as_deref().unwrap_or("");
+        if elem.name.local_name != ns::node::X509_DATA
+            || !(namespace == ns::DSIG || namespace.is_empty())
+        {
+            continue;
+        }
+        for selector in doc.children(child) {
+            let Some(elem) = doc.element(selector) else {
+                continue;
+            };
+            let namespace = elem.name.namespace_uri.as_deref().unwrap_or("");
+            if elem.name.local_name != ns::node::X509_ISSUER_SERIAL
+                || !(namespace == ns::DSIG || namespace.is_empty())
+            {
+                continue;
+            }
+            has_selector = true;
+            let mut issuer = None;
+            let mut serial = None;
+            for field in doc.children(selector) {
+                let Some(elem) = doc.element(field) else {
+                    continue;
                 };
-                if &*is_elem.name.local_name != ns::node::X509_ISSUER_SERIAL {
+                let namespace = elem.name.namespace_uri.as_deref().unwrap_or("");
+                if !(namespace == ns::DSIG || namespace.is_empty()) {
                     continue;
                 }
-                let serial_text = doc
-                    .children(issuer_serial)
-                    .into_iter()
-                    .find(|&n| {
-                        doc.element(n)
-                            .map(|e| &*e.name.local_name == ns::node::X509_SERIAL_NUMBER)
-                            .unwrap_or(false)
-                    })
-                    .map(|n| doc.text_content_deep(n))
-                    .unwrap_or_default()
-                    .trim()
-                    .to_string();
-
-                if serial_text.is_empty() {
-                    continue;
+                let slot = match elem.name.local_name.as_ref() {
+                    "X509IssuerName" => &mut issuer,
+                    "X509SerialNumber" => &mut serial,
+                    _ => continue,
+                };
+                if slot.replace(doc.text_content_deep(field)).is_some() {
+                    return Err(Error::Key("duplicate X509IssuerSerial field".into()));
                 }
-
-                // Try to match against keys in the manager
-                if let Some(key) = find_key_by_serial(manager, &serial_text) {
-                    return Ok(key);
-                }
+            }
+            let issuer =
+                issuer.ok_or_else(|| Error::Key("X509IssuerSerial lacks issuer".into()))?;
+            let issuer: x509_cert::name::Name = issuer
+                .trim()
+                .parse()
+                .map_err(|error| Error::Key(format!("invalid X509IssuerName: {error}")))?;
+            let serial =
+                serial.ok_or_else(|| Error::Key("X509IssuerSerial lacks serial".into()))?;
+            let serial = serial.trim();
+            if serial.is_empty() || !serial.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(Error::Key("invalid unsigned X509SerialNumber".into()));
+            }
+            let serial = serial.trim_start_matches('0');
+            let serial = if serial.is_empty() { "0" } else { serial };
+            if let Some(key) = find_key_by_issuer_serial(manager, &issuer, serial) {
+                return Ok(key);
             }
         }
     }
-
-    // Try <KeyValue> — extract RSA or EC public key from inline XML
-    for child in doc.children(key_info_node) {
-        let elem = match doc.element(child) {
-            Some(e) => e,
-            None => continue,
-        };
-        let ns_uri = elem.name.namespace_uri.as_deref().unwrap_or("");
-        let local = &*elem.name.local_name;
-
-        if local == ns::node::KEY_VALUE && (ns_uri == ns::DSIG || ns_uri.is_empty()) {
-            // Try RSA KeyValue
-            if let Ok(_key) = parse_rsa_key_value(child, doc) {
-                // We can't return an owned key from a borrow-based API,
-                // so we need a different approach. For now, fall through
-                // to first_key() which will be reached below.
-                // The caller (verify.rs) handles KeyValue extraction directly.
-            }
-        }
+    if has_selector {
+        return Err(Error::Key("no key matches X509IssuerSerial".into()));
     }
 
+    // This borrow-based API only selects keys already held by the manager.
+    // Inline KeyValue extraction belongs to extract_key_value; parsing it here
+    // would allocate a key that is discarded before this fallback.
     // Fallback: return the first key in the manager
     manager.first_key()
 }
 
-/// Find a key in the manager by matching X.509 certificate serial number.
-///
-/// Iterates over all keys, parses their X.509 certificate (if present),
-/// and compares the serial number as a decimal string.
-fn find_key_by_serial<'a>(manager: &'a KeysManager, serial_text: &str) -> Option<&'a Key> {
-    use der::Decode;
+/// Select only a loaded certificate with the requested issuer and serial.
+fn find_key_by_issuer_serial<'a>(
+    manager: &'a KeysManager,
+    issuer: &x509_cert::name::Name,
+    serial_text: &str,
+) -> Option<&'a Key> {
+    manager.keys().find(|key| {
+        key.x509_chain
+            .first()
+            .and_then(|der| x509_cert::Certificate::from_der(der).ok())
+            .is_some_and(|cert| {
+                format_serial_decimal(cert.tbs_certificate.serial_number.as_bytes()) == serial_text
+                    && issuer_names_equal(&cert.tbs_certificate.issuer, issuer)
+            })
+    })
+}
 
-    // Parse the expected serial as big-endian bytes for comparison
-    // Serial numbers in XML are decimal strings which may be very large
-    for key in manager.keys() {
-        if key.x509_chain.is_empty() {
-            continue;
-        }
-        // Check the leaf cert (first in chain)
-        let cert_der = &key.x509_chain[0];
-        if let Ok(cert) = x509_cert::Certificate::from_der(cert_der) {
-            let cert_serial = cert.tbs_certificate.serial_number;
-            let cert_serial_str = format_serial_decimal(cert_serial.as_bytes());
-            if cert_serial_str == serial_text {
-                return Some(key);
+// RFC 4514 text may encode a certificate's PrintableString as UTF8String.
+// Preserve RDN order, attribute OIDs, and exact decoded values across supported
+// string encodings; unsupported encodings require exact DER equality. This is
+// deliberately narrower than a full internationalized DN matching engine.
+fn issuer_names_equal(a: &x509_cert::name::Name, b: &x509_cert::name::Name) -> bool {
+    fn values_equal(a: &der::Any, b: &der::Any) -> bool {
+        let string_tag = |tag| {
+            matches!(
+                tag,
+                der::Tag::Utf8String | der::Tag::PrintableString | der::Tag::Ia5String
+            )
+        };
+        if string_tag(a.tag()) && string_tag(b.tag()) {
+            if let (Ok(a), Ok(b)) = (
+                std::str::from_utf8(a.value()),
+                std::str::from_utf8(b.value()),
+            ) {
+                return a == b;
             }
         }
+        a == b
     }
-    None
+    a.0.len() == b.0.len()
+        && a.0.iter().zip(&b.0).all(|(a, b)| {
+            if a.0.len() != b.0.len() {
+                return false;
+            }
+            let mut used = vec![false; b.0.len()];
+            for av in a.0.iter() {
+                let Some(index) = b.0.iter().enumerate().position(|(index, bv)| {
+                    !used[index] && av.oid == bv.oid && values_equal(&av.value, &bv.value)
+                }) else {
+                    return false;
+                };
+                used[index] = true;
+            }
+            true
+        })
 }
 
 /// Convert a big-endian signed integer (ASN.1 INTEGER) to a decimal string.
@@ -239,6 +276,7 @@ fn format_serial_decimal(bytes: &[u8]) -> String {
 /// this when trust anchors are configured so an anchorable certificate chain is
 /// preferred over document-controlled raw key material.
 pub fn extract_x509_key_value(key_info_node: NodeId, doc: &Document<'_>) -> Option<Key> {
+    ribergshamra_xml::limits::validate_document(doc).ok()?;
     for child in doc.children(key_info_node) {
         let elem = match doc.element(child) {
             Some(e) => e,
@@ -260,6 +298,7 @@ pub fn extract_x509_key_value(key_info_node: NodeId, doc: &Document<'_>) -> Opti
 ///
 /// Returns `Some(Key)` if a KeyValue or X509Certificate was found and parsed, `None` otherwise.
 pub fn extract_key_value(key_info_node: NodeId, doc: &Document<'_>) -> Option<Key> {
+    ribergshamra_xml::limits::validate_document(doc).ok()?;
     for child in doc.children(key_info_node) {
         let elem = match doc.element(child) {
             Some(e) => e,
@@ -366,16 +405,18 @@ fn find_leaf_cert(certs: &[ParsedCert]) -> usize {
     let subjects: Vec<Vec<u8>> = certs.iter().map(|c| c.subject_der()).collect();
     let issuers: Vec<Vec<u8>> = certs.iter().map(|c| c.issuer_der()).collect();
 
-    // Build set of subjects that are issuers of other certs
-    let mut is_issuer_of_other = vec![false; certs.len()];
-    for (i, subj) in subjects.iter().enumerate() {
-        for (j, iss) in issuers.iter().enumerate() {
-            if i != j && subj == iss {
-                is_issuer_of_other[i] = true;
-                break;
-            }
-        }
+    let mut issuer_counts = std::collections::HashMap::<&[u8], usize>::new();
+    for issuer in &issuers {
+        *issuer_counts.entry(issuer).or_default() += 1;
     }
+    let is_issuer_of_other: Vec<bool> = subjects
+        .iter()
+        .zip(&issuers)
+        .map(|(subject, issuer)| {
+            issuer_counts.get(subject.as_slice()).copied().unwrap_or(0)
+                > usize::from(subject == issuer)
+        })
+        .collect();
 
     // Strategy 1: non-CA certs that are NOT issuers of other certs
     let mut candidates: Vec<usize> = (0..certs.len())
@@ -429,12 +470,17 @@ fn extract_x509_certificate(x509_data_node: NodeId, doc: &Document<'_>) -> Optio
     let engine = base64::engine::general_purpose::STANDARD;
 
     let mut parsed_certs = Vec::new();
+    let mut certificate_count = 0;
     for child in doc.children(x509_data_node) {
         let elem = match doc.element(child) {
             Some(e) => e,
             None => continue,
         };
         if &*elem.name.local_name == ns::node::X509_CERTIFICATE {
+            certificate_count += 1;
+            if certificate_count > ribergshamra_xml::limits::MAX_SECURITY_ITEMS {
+                return None;
+            }
             let b64 = doc.text_content_deep(child);
             let b64 = b64.trim();
             let clean: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
@@ -491,6 +537,7 @@ fn parse_der_encoded_key_value(node: NodeId, doc: &Document<'_>) -> Option<Key> 
 
 /// Extract an RSA public key from a `<KeyValue><RSAKeyValue>` element.
 pub fn parse_rsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result<Key, Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     let rsa_kv = doc
         .children(key_value_node)
         .into_iter()
@@ -551,6 +598,7 @@ pub fn parse_rsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result
 ///
 /// DSAKeyValue contains P, Q, G (domain parameters) and Y (public key).
 pub fn parse_dsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result<Key, Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     let dsa_kv = doc
         .children(key_value_node)
         .into_iter()
@@ -608,6 +656,7 @@ pub fn parse_dsa_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result
 ///
 /// Supports P-256, P-384, P-521 curves via NamedCurve OID.
 pub fn parse_ec_key_value(key_value_node: NodeId, doc: &Document<'_>) -> Result<Key, Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     // ECKeyValue is in the xmldsig11 namespace
     let ec_kv = doc
         .children(key_value_node)
@@ -803,6 +852,80 @@ pub fn build_x509_key_info_from_der(certs_der: &[impl AsRef<[u8]>]) -> String {
 mod tests {
     use super::*;
 
+    fn issuer_selector(issuer: &str, serial: &str) -> String {
+        let mut writer = uppsala::XmlWriter::new();
+        writer.start_element("ds:KeyInfo", &[("xmlns:ds", ns::DSIG)]);
+        writer.start_element("ds:X509Data", &[]);
+        writer.start_element("ds:X509IssuerSerial", &[]);
+        writer.start_element("ds:X509IssuerName", &[]);
+        writer.text(issuer);
+        writer.end_element("ds:X509IssuerName");
+        writer.start_element("ds:X509SerialNumber", &[]);
+        writer.text(serial);
+        writer.end_element("ds:X509SerialNumber");
+        writer.end_element("ds:X509IssuerSerial");
+        writer.end_element("ds:X509Data");
+        writer.end_element("ds:KeyInfo");
+        writer.into_string()
+    }
+
+    #[test]
+    fn issuer_serial_binds_both_fields_without_manager_fallback() {
+        use base64::Engine;
+        let original = base64::engine::general_purpose::STANDARD
+            .decode(LEAF_B64)
+            .unwrap();
+        let cert = x509_cert::Certificate::from_der(&original).unwrap();
+        let mut other = cert.clone();
+        other.tbs_certificate.issuer = "CN=Other certificate issuer".parse().unwrap();
+        let mut other_key = crate::loader::load_x509_cert_der(&original).unwrap();
+        // Synthetic metadata isolates selection from signature/path validation.
+        other_key.x509_chain = vec![other.to_der().unwrap()];
+        let mut manager = KeysManager::new();
+        manager.add_key(other_key);
+        manager.add_key(crate::loader::load_x509_cert_der(&original).unwrap());
+        let serial = format_serial_decimal(cert.tbs_certificate.serial_number.as_bytes());
+        let xml = issuer_selector(
+            &cert.tbs_certificate.issuer.to_string(),
+            &format!("00{serial}"),
+        );
+        let doc = uppsala::parse(&xml).unwrap();
+        let selected = resolve_key_info(find_key_info(&doc), &doc, &manager).unwrap();
+        assert_eq!(selected.x509_chain[0], original);
+        let xml = issuer_selector("CN=Unknown issuer", &serial);
+        let doc = uppsala::parse(&xml).unwrap();
+        assert!(resolve_key_info(find_key_info(&doc), &doc, &manager).is_err());
+    }
+
+    #[test]
+    fn issuer_rdn_matching_is_bijective_and_encoding_aware() {
+        let name = |value: &str| value.parse::<x509_cert::name::Name>().unwrap();
+        let duplicated = name("CN=alpha+CN=#1305616c706861");
+        let different = name("CN=alpha+CN=beta");
+        assert!(!issuer_names_equal(&duplicated, &different));
+        let utf8 = name("CN=alpha");
+        let printable = name("CN=#1305616c706861");
+        assert!(issuer_names_equal(&utf8, &printable));
+        let teletex = name("CN=#1405616c706861");
+        assert!(!issuer_names_equal(&utf8, &teletex));
+        assert!(issuer_names_equal(&teletex, &teletex));
+    }
+
+    #[test]
+    fn malformed_issuer_selectors_fail_closed() {
+        let mut manager = KeysManager::new();
+        manager.add_key(crate::loader::load_hmac_key(b"synthetic key").unwrap());
+        for fields in [
+            "<ds:X509SerialNumber>1</ds:X509SerialNumber>",
+            "<ds:X509IssuerName>CN=Issuer</ds:X509IssuerName><ds:X509SerialNumber>-1</ds:X509SerialNumber>",
+            "<ds:X509IssuerName>CN=Issuer</ds:X509IssuerName><ds:X509IssuerName>CN=Issuer</ds:X509IssuerName><ds:X509SerialNumber>1</ds:X509SerialNumber>",
+        ] {
+            let xml = format!("<ds:KeyInfo xmlns:ds=\"{}\"><ds:X509Data><ds:X509IssuerSerial>{fields}</ds:X509IssuerSerial></ds:X509Data></ds:KeyInfo>", ns::DSIG);
+            let doc = uppsala::parse(&xml).unwrap();
+            assert!(resolve_key_info(find_key_info(&doc), &doc, &manager).is_err());
+        }
+    }
+
     #[test]
     fn test_build_x509_key_info_single_cert() {
         let cert = "MIIBojCCAUmgAwIBAgIJAL==";
@@ -841,6 +964,24 @@ mod tests {
     fn test_build_x509_key_info_namespace_uses_constant() {
         let xml = build_x509_key_info(&["AAAA"]);
         assert!(xml.contains(ns::DSIG));
+    }
+
+    #[test]
+    fn manager_lookup_uses_preloaded_key_with_inline_keyvalue() {
+        let rsa = crate::loader::load_rsa_public_pem(include_bytes!(
+            "../tests/fixtures/keys/rsa/rsa-2048-pubkey.pem"
+        ))
+        .expect("public interop fixture");
+        let xml = format!(
+            "<ds:KeyInfo xmlns:ds=\"{}\"><ds:KeyValue>{}</ds:KeyValue></ds:KeyInfo>",
+            ns::DSIG,
+            rsa.to_key_value_xml("ds").unwrap()
+        );
+        let doc = uppsala::parse(&xml).unwrap();
+        let mut manager = KeysManager::new();
+        manager.add_key(crate::loader::load_hmac_key(b"synthetic key").unwrap());
+        let resolved = resolve_key_info(doc.document_element().unwrap(), &doc, &manager).unwrap();
+        assert!(std::ptr::eq(resolved, manager.first_key().unwrap()));
     }
 
     // Aleksey xmlsec interop chain (from keys/rsa/rsa-2048-key.p12): the

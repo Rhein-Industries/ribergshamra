@@ -27,6 +27,10 @@ legacy-algorithms = [
     "ribergshamra-dsig/legacy-algorithms",
 ]
 
+# Explicit compatibility opt-in to unpatched RustCrypto RSA decryption.
+# Independent of legacy-algorithms and never enabled by default.
+legacy-rsa-decryption = ["ribergshamra-crypto/legacy-rsa-decryption", "ribergshamra-keys/legacy-rsa-decryption", "ribergshamra-transforms/legacy-rsa-decryption", "ribergshamra-dsig/legacy-rsa-decryption", "ribergshamra-enc/legacy-rsa-decryption", "riptering/legacy-rsa-decryption"]
+
 [dependencies]
 ribergshamra-core.workspace = true
 ribergshamra-xml.workspace = true

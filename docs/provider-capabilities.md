@@ -1,6 +1,6 @@
 # Provider capabilities
 
-ribergshamra routes document cryptography through riptering 0.6, Rhein
+ribergshamra routes document cryptography through riptering 0.7, Rhein
 Industries' maintained fork of Kryptering 0.5 (the provider since bergshamra
 0.8.0). This table is the expected-support manifest for the provider matrix;
 tests must either exercise a row or assert the corresponding deterministic
@@ -13,7 +13,7 @@ unsupported error.
 | ECDSA / Ed25519 | full existing mappings | stable AWS-LC mappings |
 | AES-CBC/GCM | 128/192/256 | 128/192/256 |
 | AES-KW | 128/192/256 | 128/256; 192 is expected-unsupported |
-| RSA-OAEP | independent SHA-1/224/256/384/512 digest and MGF1; MD5/RIPEMD160 with `legacy-algorithms` | SHA-1/256/384/512 when digest and MGF1 match |
+| RSA-OAEP | encryption supports independent SHA-1/224/256/384/512 digest and MGF1; MD5/RIPEMD160 with `legacy-algorithms`; decryption requires `legacy-rsa-decryption` | SHA-1/256/384/512 when digest and MGF1 match |
 | ECDH | P-256/P-384/P-521 | P-256/P-384/P-521 |
 | X25519 | supported | supported |
 | finite-field X9.42 DH | supported through neutral hazmat parameters | expected-unsupported |
@@ -27,6 +27,11 @@ parameterized `supports(Operation)` query is authoritative at runtime.
 
 PKCS#11 is orthogonal: token operations remain on-token and any required
 software preprocessing uses the selected document provider.
+
+RustCrypto RSA decryption is disabled by default independently of the ordinary
+legacy algorithm feature. The separate `legacy-rsa-decryption` compatibility
+feature retains the unresolved upstream timing risk. It does not change AWS-LC
+or PKCS#11 policy; FIPS software RSA key transport remains unsupported.
 
 ## FIPS deployment note
 

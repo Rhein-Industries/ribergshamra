@@ -11,7 +11,8 @@
 //! 6. Verify `<SignatureValue>`
 
 use crate::context::{
-    local_reference_relative_path, read_existing_relative_file, url_map_matches, DsigContext,
+    local_reference_relative_path, read_existing_relative_file, read_regular_external_file,
+    url_map_matches, DsigContext,
 };
 use ribergshamra_c14n::C14nMode;
 use ribergshamra_core::{algorithm, ns, Error};
@@ -162,7 +163,7 @@ fn reference_digest_policy_failure(
 /// Assertion) cannot rely on [`verify`] alone, because the object's signature
 /// may not be the first in the document.
 pub fn verify(ctx: &DsigContext, xml: &str) -> Result<VerifyResult, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
     verify_document_with_source(ctx, &doc, Some(xml))
 }
 
@@ -219,7 +220,7 @@ pub fn verify_document_with_source(
 /// uniform success; the returned vector may mix [`VerifyResult::Valid`] and
 /// [`VerifyResult::Invalid`].
 pub fn verify_all(ctx: &DsigContext, xml: &str) -> Result<Vec<VerifyResult>, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
     verify_all_document_with_source(ctx, &doc, Some(xml))
 }
 
@@ -271,6 +272,21 @@ fn build_verify_id_map(
     let extra: Vec<&str> = ctx.id_attrs.iter().map(|s| s.as_str()).collect();
     id_attrs.extend(extra);
     build_id_map(doc, &id_attrs)
+}
+
+/// Certificate-free inline keys require an explicit exception under an
+/// anchored trust policy, including keys recovered from EncryptedKey.
+fn validate_inline_key_trust(ctx: &DsigContext, key: &ribergshamra_keys::Key) -> Result<(), Error> {
+    if !ctx.insecure
+        && ctx.keys_manager.has_trusted_certs()
+        && key.x509_chain.is_empty()
+        && !ctx.allow_raw_inline_keyinfo_with_trust_anchors
+    {
+        return Err(Error::Key(
+            "raw inline KeyInfo key is not trusted when trust anchors are configured".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Verify a single `<Signature>` element (`sig_node`) inside an already-parsed
@@ -514,7 +530,6 @@ fn verify_signature_node(
     // trust pre-configured IdP keys, not whatever cert an attacker embeds.
     let key_info_node = find_child_element(doc, sig_node, ns::DSIG, ns::node::KEY_INFO);
     let mut key_from_x509 = false;
-    let mut key_from_raw_inline_keyinfo = false;
     let mut key_from_manager = false;
     // extracted_key holds ownership when key is extracted from inline KeyInfo.
     // The initial `None` is overwritten in every branch before being read, but
@@ -525,10 +540,9 @@ fn verify_signature_node(
     let key = if ctx.trusted_keys_only {
         // Secure mode: only use keys from the manager, never inline keys
         if let Some(ki) = key_info_node {
-            let effective_ki = resolve_key_info_reference(doc, ki, id_map).unwrap_or(ki);
+            let effective_ki = resolve_key_info_reference(doc, ki, id_map)?.unwrap_or(ki);
             let k =
-                ribergshamra_keys::keyinfo::resolve_key_info(effective_ki, doc, &ctx.keys_manager)
-                    .or_else(|_| ctx.keys_manager.first_key())?;
+                ribergshamra_keys::keyinfo::resolve_key_info(effective_ki, doc, &ctx.keys_manager)?;
             if ctx.debug {
                 eprintln!(
                     "== Key: resolved from manager (trusted_keys_only) ({})",
@@ -551,7 +565,7 @@ fn verify_signature_node(
     } else if let Some(ki) = key_info_node {
         // Standard mode: try inline KeyValue (RSA/EC public key embedded in XML),
         // then try EncryptedKey unwrap, then fall back to KeysManager lookup.
-        let effective_ki = resolve_key_info_reference(doc, ki, id_map).unwrap_or(ki);
+        let effective_ki = resolve_key_info_reference(doc, ki, id_map)?.unwrap_or(ki);
         let prefer_anchorable_inline_key = !ctx.insecure
             && ctx.keys_manager.has_trusted_certs()
             && !ctx.allow_raw_inline_keyinfo_with_trust_anchors;
@@ -567,7 +581,6 @@ fn verify_signature_node(
             // Under an anchored policy we prefer `<X509Data>` first, so a raw
             // key does not block a later certificate chain that can satisfy the
             // configured anchors.
-            key_from_raw_inline_keyinfo = key.x509_chain.is_empty();
             Some(key)
         } else {
             try_unwrap_encrypted_key(doc, effective_ki, &ctx.keys_manager).ok()
@@ -577,6 +590,8 @@ fn verify_signature_node(
         })
         .or_else(|| try_resolve_retrieval_method_inline(doc, effective_ki, id_map));
         if let Some(ref ek) = extracted_key {
+            // Wrapping or transport does not give a session key certificate trust.
+            validate_inline_key_trust(ctx, ek)?;
             if ctx.debug {
                 eprintln!(
                     "== Key: extracted inline key ({})",
@@ -621,14 +636,6 @@ fn verify_signature_node(
         // signature could verify against an attacker-supplied cert while the
         // configured anchors are silently ignored (CVE-class trust bypass).
         let has_trusted_anchors = ctx.keys_manager.has_trusted_certs();
-        if has_trusted_anchors
-            && key_from_raw_inline_keyinfo
-            && !ctx.allow_raw_inline_keyinfo_with_trust_anchors
-        {
-            return Err(Error::Key(
-                "raw inline KeyInfo key is not trusted when trust anchors are configured".into(),
-            ));
-        }
 
         let needs_x509_validation = (ctx.enabled_key_data_x509 && key_from_x509)
             || (ctx.verify_keys && key_from_manager && !key.x509_chain.is_empty())
@@ -754,6 +761,7 @@ fn verify_reference(
     // In debug mode we deliberately skip the streaming digest fast path because
     // callers asked to see the exact pre-digest bytes.
     let transforms_node = find_child_element(doc, reference, ns::DSIG, ns::node::TRANSFORMS);
+    crate::context::validate_reference_transforms(doc, transforms_node)?;
     if !debug {
         if let Some((computed, resolved_node)) =
             try_fast_reference_digest(doc, id_map, uri, sig_node, transforms_node, digest_uri)?
@@ -782,7 +790,7 @@ fn verify_reference(
         let xml_text = match xml {
             Some(xml) => xml,
             None => {
-                owned_xml = doc.to_xml();
+                owned_xml = ribergshamra_xml::limits::serialize_document(doc)?;
                 &owned_xml
             }
         };
@@ -1135,8 +1143,9 @@ fn remove_subtree_from_node_set(id: NodeId, doc: &Document<'_>, node_set: &mut N
 /// Same-document references borrow `xml` in the returned [`ResolvedUri::Xml`]
 /// variant so the generic transform pipeline does not clone large verifier
 /// inputs. Detached binary references are read only from explicit URL maps or
-/// simple relative paths, and are marked unsafe for raw pre-digest debug
-/// logging so an invalid signature cannot disclose those local bytes.
+/// simple relative paths within a caller-provided base directory. Only bounded
+/// regular files are accepted, and their bytes are marked unsafe for raw
+/// pre-digest debug logging.
 fn resolve_reference_uri<'a>(
     uri: &str,
     doc: &Document<'_>,
@@ -1183,8 +1192,7 @@ fn resolve_reference_uri<'a>(
         // same-resource `#fragment` suffix.
         for (map_url, file_path) in url_maps {
             if url_map_matches(uri, map_url) {
-                let data = std::fs::read(file_path)
-                    .map_err(|e| Error::Other(format!("url-map {file_path}: {e}")))?;
+                let data = read_regular_external_file(std::path::Path::new(file_path))?;
                 return Ok(ResolvedUri::Binary {
                     bytes: data,
                     debug_pre_digest_bytes: false,
@@ -1208,10 +1216,10 @@ fn resolve_reference_uri<'a>(
 /// Read a local detached `<Reference>` URI when it is a simple relative path.
 ///
 /// XML Signature interop suites use document-adjacent detached files such as
-/// `document.xml`, so ribergshamra keeps that compatibility. Absolute paths and
-/// parent-directory traversal are rejected before any filesystem read. Existing
-/// candidates are canonicalized and kept inside the base directory used for the
-/// lookup, and the caller treats returned bytes as unsafe for raw debug logging.
+/// `document.xml`, so callers can explicitly authorize that directory with
+/// `base_dir`. There is no current-working-directory fallback. Absolute paths
+/// and traversal are rejected, and existing candidates must stay inside the
+/// configured base directory.
 fn read_relative_reference_uri(
     uri: &str,
     base_dir: Option<&str>,
@@ -1220,18 +1228,10 @@ fn read_relative_reference_uri(
         return Ok(None);
     };
 
-    if let Some(base) = base_dir {
-        if let Some(data) = read_existing_relative_file(std::path::Path::new(base), path, uri)? {
-            return Ok(Some(data));
-        }
-    }
-
-    let cwd = std::env::current_dir().map_err(|e| Error::Other(format!("current dir: {e}")))?;
-    if let Some(data) = read_existing_relative_file(&cwd, path, uri)? {
-        return Ok(Some(data));
-    }
-
-    Ok(None)
+    let Some(base) = base_dir else {
+        return Ok(None);
+    };
+    read_existing_relative_file(std::path::Path::new(base), path, uri)
 }
 
 /// Apply a single transform.
@@ -1320,7 +1320,7 @@ fn apply_relationship_transform<'a>(
     };
 
     // Parse the input XML
-    let doc = uppsala::parse(xml_text.as_ref())
+    let doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
         .map_err(|e| Error::Transform(format!("Relationship XML parse: {e}")))?;
 
     // Collect matching <Relationship> elements
@@ -1401,6 +1401,13 @@ fn apply_xslt_transform<'a>(
 ) -> Result<ribergshamra_transforms::TransformData<'a>, Error> {
     const XSL_NS: &str = "http://www.w3.org/1999/XSL/Transform";
 
+    ribergshamra_xml::limits::validate_document(outer_doc)?;
+    let input_len = match &data {
+        ribergshamra_transforms::TransformData::Xml { xml_text, .. } => xml_text.len(),
+        ribergshamra_transforms::TransformData::Binary(bytes) => bytes.len(),
+    };
+    ribergshamra_xml::limits::validate_input_size(input_len)?;
+
     // Find the <xsl:stylesheet> child element
     let stylesheet = outer_doc
         .children(transform_node)
@@ -1453,6 +1460,89 @@ fn apply_xslt_transform<'a>(
     apply_minimal_xslt(data, stylesheet, &templates, outer_doc)
 }
 
+/// Actual execution budget shared across every recursive XSLT helper.
+struct XsltExecution {
+    output: String,
+    remaining_work: usize,
+    max_depth: usize,
+    max_output_bytes: usize,
+}
+
+impl XsltExecution {
+    fn bounded() -> Self {
+        Self {
+            output: String::new(),
+            remaining_work: ribergshamra_xml::limits::MAX_WORK,
+            max_depth: ribergshamra_xml::limits::MAX_DEPTH,
+            max_output_bytes: ribergshamra_xml::limits::MAX_OUTPUT_BYTES,
+        }
+    }
+
+    fn charge(&mut self, work: usize) -> Result<(), Error> {
+        self.remaining_work = self
+            .remaining_work
+            .checked_sub(work)
+            .ok_or_else(|| Error::Transform("XSLT execution work limit exceeded".into()))?;
+        Ok(())
+    }
+
+    fn enter(&mut self, depth: usize) -> Result<(), Error> {
+        if depth > self.max_depth {
+            return Err(Error::Transform(
+                "XSLT execution recursion limit exceeded".into(),
+            ));
+        }
+        self.charge(1)
+    }
+
+    fn reserve_output(&self, additional: usize) -> Result<(), Error> {
+        if self
+            .output
+            .len()
+            .checked_add(additional)
+            .is_none_or(|size| size > self.max_output_bytes)
+        {
+            return Err(Error::Transform("XSLT output byte limit exceeded".into()));
+        }
+        Ok(())
+    }
+
+    fn push(&mut self, text: &str) -> Result<(), Error> {
+        self.charge(text.len())?;
+        self.reserve_output(text.len())?;
+        self.output.push_str(text);
+        Ok(())
+    }
+
+    fn escape(&mut self, text: &str, attribute: bool) -> Result<(), Error> {
+        // Check before either the length scan or any output append. Escaping
+        // makes two passes; account for both instead of allocating a temporary.
+        self.charge(text.len().saturating_mul(2))?;
+        let mut escaped_bytes = 0usize;
+        for c in text.chars() {
+            let width = match c {
+                '&' => 5,
+                '<' => 4,
+                '"' if attribute => 6,
+                '\t' | '\n' if attribute => 5,
+                '\r' => 5,
+                '>' if !attribute => 4,
+                _ => c.len_utf8(),
+            };
+            escaped_bytes = escaped_bytes
+                .checked_add(width)
+                .ok_or_else(|| Error::Transform("XSLT output byte limit exceeded".into()))?;
+        }
+        self.reserve_output(escaped_bytes)?;
+        if attribute {
+            xml_escape_attr(text, &mut self.output);
+        } else {
+            xml_escape_text(text, &mut self.output);
+        }
+        Ok(())
+    }
+}
+
 /// Minimal XSLT processor for simple template-based transforms.
 ///
 /// Supports a subset of XSLT 1.0:
@@ -1466,6 +1556,29 @@ fn apply_minimal_xslt<'a>(
     templates: &[NodeId],
     outer_doc: &Document<'_>,
 ) -> Result<ribergshamra_transforms::TransformData<'a>, Error> {
+    apply_minimal_xslt_with_execution(
+        data,
+        stylesheet,
+        templates,
+        outer_doc,
+        XsltExecution::bounded(),
+    )
+}
+
+fn apply_minimal_xslt_with_execution<'a>(
+    data: ribergshamra_transforms::TransformData<'a>,
+    stylesheet: NodeId,
+    templates: &[NodeId],
+    outer_doc: &Document<'_>,
+    mut execution: XsltExecution,
+) -> Result<ribergshamra_transforms::TransformData<'a>, Error> {
+    ribergshamra_xml::limits::validate_document(outer_doc)?;
+    let input_len = match &data {
+        ribergshamra_transforms::TransformData::Xml { xml_text, .. } => xml_text.len(),
+        ribergshamra_transforms::TransformData::Binary(bytes) => bytes.len(),
+    };
+    ribergshamra_xml::limits::validate_input_size(input_len)?;
+    execution.charge(outer_doc.children(stylesheet).len())?;
     // Get the input XML
     let xml_text = match &data {
         ribergshamra_transforms::TransformData::Xml { xml_text, .. } => xml_text.clone(),
@@ -1474,7 +1587,7 @@ fn apply_minimal_xslt<'a>(
             .into(),
     };
 
-    let input_doc = uppsala::parse(xml_text.as_ref())
+    let input_doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
         .map_err(|e| Error::Transform(format!("XSLT input XML parse: {e}")))?;
 
     // Check for xsl:strip-space
@@ -1496,6 +1609,13 @@ fn apply_minimal_xslt<'a>(
         .collect();
 
     // Build set of element names to strip whitespace from
+    execution.charge(
+        strip_spaces
+            .iter()
+            .map(String::len)
+            .sum::<usize>()
+            .saturating_mul(2),
+    )?;
     let strip_set: std::collections::HashSet<String> = strip_spaces
         .iter()
         .flat_map(|s| s.split_whitespace().map(|w| w.to_owned()))
@@ -1529,8 +1649,9 @@ fn apply_minimal_xslt<'a>(
     });
 
     // Process root element
-    let root = input_doc.document_element().unwrap();
-    let mut output = String::new();
+    let root = input_doc
+        .document_element()
+        .ok_or_else(|| Error::Transform("XSLT input has no document element".into()))?;
     xslt_apply_templates_to_node(
         root,
         templates,
@@ -1538,15 +1659,17 @@ fn apply_minimal_xslt<'a>(
         &input_doc,
         &default_ns,
         &strip_set,
-        &mut output,
-    );
+        &mut execution,
+        0,
+    )?;
 
     Ok(ribergshamra_transforms::TransformData::Binary(
-        output.into_bytes(),
+        execution.output.into_bytes(),
     ))
 }
 
 /// Apply templates to a node.
+#[allow(clippy::too_many_arguments)]
 fn xslt_apply_templates_to_node(
     node: NodeId,
     templates: &[NodeId],
@@ -1554,14 +1677,24 @@ fn xslt_apply_templates_to_node(
     input_doc: &Document<'_>,
     default_ns: &Option<String>,
     strip_set: &std::collections::HashSet<String>,
-    out: &mut String,
-) {
+    execution: &mut XsltExecution,
+    depth: usize,
+) -> Result<(), Error> {
+    execution.enter(depth)?;
     // Find matching template
-    if let Some(tmpl) = find_matching_template(node, templates, tmpl_doc, input_doc) {
+    if let Some(tmpl) = find_matching_template(node, templates, tmpl_doc, input_doc, execution)? {
         // Execute template body
         xslt_execute_body(
-            tmpl, node, templates, tmpl_doc, input_doc, default_ns, strip_set, out,
-        );
+            tmpl,
+            node,
+            templates,
+            tmpl_doc,
+            input_doc,
+            default_ns,
+            strip_set,
+            execution,
+            depth + 1,
+        )?;
     } else {
         // Default: for elements, apply templates to children; for text, copy text
         if matches!(
@@ -1572,27 +1705,38 @@ fn xslt_apply_templates_to_node(
             let parent_name = input_doc
                 .parent(node)
                 .and_then(|p| input_doc.element(p))
-                .map(|e| e.name.local_name.to_string())
+                .map(|e| e.name.local_name.as_ref())
                 .unwrap_or_default();
             let text = match input_doc.node_kind(node) {
                 Some(NodeKind::Text(t)) | Some(NodeKind::CData(t)) => t.as_ref(),
                 _ => "",
             };
-            if strip_set.contains(&parent_name)
-                && text.chars().all(|c: char| c.is_ascii_whitespace())
-            {
+            execution.charge(parent_name.len())?;
+            let strip = strip_set.contains(parent_name);
+            if strip {
+                execution.charge(text.len())?;
+            }
+            if strip && text.chars().all(|c: char| c.is_ascii_whitespace()) {
                 // Skip whitespace-only text in stripped elements
             } else {
-                xml_escape_text(text, out);
+                execution.escape(text, false)?;
             }
         } else if input_doc.element(node).is_some() {
             for child in input_doc.children(node) {
                 xslt_apply_templates_to_node(
-                    child, templates, tmpl_doc, input_doc, default_ns, strip_set, out,
-                );
+                    child,
+                    templates,
+                    tmpl_doc,
+                    input_doc,
+                    default_ns,
+                    strip_set,
+                    execution,
+                    depth + 1,
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 /// Execute the body of an XSLT template.
@@ -1608,15 +1752,19 @@ fn xslt_execute_body(
     input_doc: &Document<'_>,
     default_ns: &Option<String>,
     strip_set: &std::collections::HashSet<String>,
-    out: &mut String,
-) {
+    execution: &mut XsltExecution,
+    depth: usize,
+) -> Result<(), Error> {
     const XSL_NS: &str = "http://www.w3.org/1999/XSL/Transform";
+    execution.enter(depth)?;
 
     for child in tmpl_doc.children(body) {
+        execution.charge(1)?;
         if let Some(NodeKind::Text(t)) | Some(NodeKind::CData(t)) = tmpl_doc.node_kind(child) {
+            execution.charge(t.len())?;
             // Skip whitespace-only text nodes in template
             if !t.trim().is_empty() {
-                xml_escape_text(t, out);
+                execution.escape(t, false)?;
             }
         } else if let Some(elem) = tmpl_doc.element(child) {
             let child_ns = elem.name.namespace_uri.as_deref();
@@ -1629,56 +1777,71 @@ fn xslt_execute_body(
                         if let Some(sel) = select {
                             // Simple child selection: "child-name"
                             for ch in input_doc.children(context_node) {
+                                execution.charge(1 + sel.len())?;
                                 if input_doc.element(ch).is_some()
                                     && xslt_node_matches_select(ch, sel, input_doc)
                                 {
                                     xslt_apply_templates_to_node(
-                                        ch, templates, tmpl_doc, input_doc, default_ns, strip_set,
-                                        out,
-                                    );
+                                        ch,
+                                        templates,
+                                        tmpl_doc,
+                                        input_doc,
+                                        default_ns,
+                                        strip_set,
+                                        execution,
+                                        depth + 1,
+                                    )?;
                                 }
                             }
                         } else {
                             // Apply to all children
                             for ch in input_doc.children(context_node) {
                                 xslt_apply_templates_to_node(
-                                    ch, templates, tmpl_doc, input_doc, default_ns, strip_set, out,
-                                );
+                                    ch,
+                                    templates,
+                                    tmpl_doc,
+                                    input_doc,
+                                    default_ns,
+                                    strip_set,
+                                    execution,
+                                    depth + 1,
+                                )?;
                             }
                         }
                     }
                     "value-of" => {
                         if let Some(sel) = elem.get_attribute("select") {
                             // Simple: select="name" → get text of child element
-                            let val = xslt_eval_value_of(context_node, sel, input_doc);
-                            xml_escape_text(&val, out);
+                            xslt_eval_value_of(context_node, sel, input_doc, execution)?;
                         }
                     }
                     "copy" => {
                         if let Some(ctx_elem) = input_doc.element(context_node) {
                             let local = &*ctx_elem.name.local_name;
-                            out.push('<');
-                            out.push_str(local);
+                            execution.push("<")?;
+                            execution.push(local)?;
                             // Copy namespace declarations from context
                             for (prefix, uri) in &ctx_elem.namespace_declarations {
-                                out.push_str(" xmlns");
+                                execution.charge(1)?;
+                                execution.push(" xmlns")?;
                                 if !prefix.is_empty() {
-                                    out.push(':');
-                                    out.push_str(prefix);
+                                    execution.push(":")?;
+                                    execution.push(prefix)?;
                                 }
-                                out.push_str("=\"");
-                                xml_escape_attr(uri, out);
-                                out.push('"');
+                                execution.push("=\"")?;
+                                execution.escape(uri, true)?;
+                                execution.push("\"")?;
                             }
                             // Copy attributes
                             for attr in &ctx_elem.attributes {
-                                out.push(' ');
-                                out.push_str(&attr.name.local_name);
-                                out.push_str("=\"");
-                                xml_escape_attr(&attr.value, out);
-                                out.push('"');
+                                execution.charge(1)?;
+                                execution.push(" ")?;
+                                execution.push(&attr.name.local_name)?;
+                                execution.push("=\"")?;
+                                execution.escape(&attr.value, true)?;
+                                execution.push("\"")?;
                             }
-                            out.push('>');
+                            execution.push(">")?;
                             // Execute body children
                             xslt_execute_body(
                                 child,
@@ -1688,15 +1851,16 @@ fn xslt_execute_body(
                                 input_doc,
                                 default_ns,
                                 strip_set,
-                                out,
-                            );
-                            out.push_str("</");
-                            out.push_str(local);
-                            out.push('>');
+                                execution,
+                                depth + 1,
+                            )?;
+                            execution.push("</")?;
+                            execution.push(local)?;
+                            execution.push(">")?;
                         } else if let Some(NodeKind::Text(t)) | Some(NodeKind::CData(t)) =
                             input_doc.node_kind(context_node)
                         {
-                            xml_escape_text(t, out);
+                            execution.escape(t, false)?;
                         }
                     }
                     _ => {
@@ -1706,25 +1870,26 @@ fn xslt_execute_body(
             } else {
                 // Literal result element
                 let local = &*elem.name.local_name;
-                out.push('<');
-                out.push_str(local);
+                execution.push("<")?;
+                execution.push(local)?;
                 // Add default namespace if present and different from parent
                 if let Some(dns) = default_ns {
                     // Only emit for elements that use the default namespace
                     if child_ns.is_none() || child_ns == Some(dns.as_str()) {
-                        out.push_str(" xmlns=\"");
-                        xml_escape_attr(dns, out);
-                        out.push('"');
+                        execution.push(" xmlns=\"")?;
+                        execution.escape(dns, true)?;
+                        execution.push("\"")?;
                     }
                 }
                 for attr in &elem.attributes {
-                    out.push(' ');
-                    out.push_str(&attr.name.local_name);
-                    out.push_str("=\"");
-                    xml_escape_attr(&attr.value, out);
-                    out.push('"');
+                    execution.charge(1)?;
+                    execution.push(" ")?;
+                    execution.push(&attr.name.local_name)?;
+                    execution.push("=\"")?;
+                    execution.escape(&attr.value, true)?;
+                    execution.push("\"")?;
                 }
-                out.push('>');
+                execution.push(">")?;
                 xslt_execute_body(
                     child,
                     context_node,
@@ -1733,14 +1898,16 @@ fn xslt_execute_body(
                     input_doc,
                     default_ns,
                     strip_set,
-                    out,
-                );
-                out.push_str("</");
-                out.push_str(local);
-                out.push('>');
+                    execution,
+                    depth + 1,
+                )?;
+                execution.push("</")?;
+                execution.push(local)?;
+                execution.push(">")?;
             }
         }
     }
+    Ok(())
 }
 
 /// Check if a node matches a simple XSLT select expression.
@@ -1749,25 +1916,39 @@ fn xslt_node_matches_select(node: NodeId, select: &str, input_doc: &Document<'_>
         true
     } else {
         // Simple element name match (possibly with path like "player/name")
-        let parts: Vec<&str> = select.split('/').collect();
-        let last = parts.last().unwrap_or(&"");
+        let last = select.rsplit('/').next().unwrap_or("");
         input_doc
             .element(node)
-            .is_some_and(|e| e.name.local_name.as_ref() == *last)
+            .is_some_and(|e| e.name.local_name.as_ref() == last)
     }
 }
 
 /// Evaluate a simple xsl:value-of select expression.
-fn xslt_eval_value_of(node: NodeId, select: &str, input_doc: &Document<'_>) -> String {
+fn xslt_eval_value_of(
+    node: NodeId,
+    select: &str,
+    input_doc: &Document<'_>,
+    execution: &mut XsltExecution,
+) -> Result<(), Error> {
+    execution.charge(select.len())?;
     // Handle "name", "position", etc. — simple child element name
     for child in input_doc.children(node) {
+        execution.charge(1)?;
         if let Some(elem) = input_doc.element(child) {
             if elem.name.local_name.as_ref() == select {
-                return element_text(input_doc, child).unwrap_or("").to_owned();
+                for text_node in input_doc.children(child) {
+                    execution.charge(1)?;
+                    if let Some(NodeKind::Text(text)) | Some(NodeKind::CData(text)) =
+                        input_doc.node_kind(text_node)
+                    {
+                        return execution.escape(text, false);
+                    }
+                }
+                return Ok(());
             }
         }
     }
-    String::new()
+    Ok(())
 }
 
 /// Find the first template that matches a node.
@@ -1776,35 +1957,39 @@ fn find_matching_template(
     templates: &[NodeId],
     tmpl_doc: &Document<'_>,
     input_doc: &Document<'_>,
-) -> Option<NodeId> {
-    let elem = input_doc.element(node)?;
+    execution: &mut XsltExecution,
+) -> Result<Option<NodeId>, Error> {
+    let Some(elem) = input_doc.element(node) else {
+        return Ok(None);
+    };
     let local = &*elem.name.local_name;
     let parent_name = input_doc
         .parent(node)
-        .and_then(|p| input_doc.element(p).map(|e| e.name.local_name.to_string()));
+        .and_then(|p| input_doc.element(p).map(|e| e.name.local_name.as_ref()));
 
     // Find the most specific matching template
     // Priority: parent/child > child > generic
     for &tmpl in templates {
+        execution.charge(1)?;
         let match_attr = tmpl_doc
             .element(tmpl)
             .and_then(|e| e.get_attribute("match"))
             .unwrap_or("");
+        execution.charge(match_attr.len())?;
         // Check "parent/child" pattern
         if match_attr.contains('/') {
-            let parts: Vec<&str> = match_attr.split('/').collect();
-            if parts.len() == 2 {
-                if let Some(ref pn) = parent_name {
-                    if pn == parts[0] && local == parts[1] {
-                        return Some(tmpl);
+            if let Some((parent, child)) = match_attr.split_once('/') {
+                if let Some(pn) = parent_name {
+                    if pn == parent && local == child && !child.contains('/') {
+                        return Ok(Some(tmpl));
                     }
                 }
             }
         } else if match_attr == local {
-            return Some(tmpl);
+            return Ok(Some(tmpl));
         }
     }
-    None
+    Ok(None)
 }
 
 /// Escape a string for XML attribute value (C14N attribute escaping).
@@ -1833,6 +2018,58 @@ fn xml_escape_text(s: &str, out: &mut String) {
             _ => out.push(c),
         }
     }
+}
+
+// Bound both delimiter nesting and recursive parser/evaluator calls. Flat
+// boolean/union chains also recurse, so a delimiter-only check is insufficient.
+const MAX_XPATH_DEPTH: usize = 64;
+
+fn xpath_depth_limit_error() -> Error {
+    Error::Transform(format!(
+        "XPath expression exceeds maximum recursion depth of {MAX_XPATH_DEPTH}"
+    ))
+}
+
+/// Check nesting iteratively before any recursive XPath processing. Delimiters
+/// inside XPath string literals are data, rather than expression nesting.
+fn validate_xpath_depth(expr: &str) -> Result<(), Error> {
+    let mut delimiters = [0u8; MAX_XPATH_DEPTH];
+    let mut depth = 0;
+    let mut quote = None;
+    for byte in expr.bytes() {
+        if let Some(active_quote) = quote {
+            if byte == active_quote {
+                quote = None;
+            }
+            continue;
+        }
+        match byte {
+            b'\'' | b'"' => quote = Some(byte),
+            b'(' | b'[' => {
+                if depth == MAX_XPATH_DEPTH {
+                    return Err(xpath_depth_limit_error());
+                }
+                delimiters[depth] = byte;
+                depth += 1;
+            }
+            b')' | b']' => {
+                let opening = if byte == b')' { b'(' } else { b'[' };
+                if depth == 0 || delimiters[depth - 1] != opening {
+                    return Err(Error::Transform(
+                        "XPath expression has unbalanced delimiters".into(),
+                    ));
+                }
+                depth -= 1;
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 || quote.is_some() {
+        return Err(Error::Transform(
+            "XPath expression has unbalanced delimiters or string literal".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// Apply an XPath 1.0 transform.
@@ -1864,6 +2101,7 @@ fn apply_xpath_transform<'a>(
         .ok_or_else(|| Error::MissingElement("XPath expression element".into()))?;
 
     let xpath_raw = element_text(outer_doc, xpath_node).unwrap_or("").trim();
+    validate_xpath_depth(xpath_raw)?;
 
     // Normalize whitespace: collapse runs of whitespace (including newlines,
     // tabs, and multi-space indentation) into a single space so that the parser
@@ -1886,7 +2124,7 @@ fn apply_xpath_transform<'a>(
     }
 
     // Try to parse and evaluate as a boolean XPath expression
-    if let Some(parsed) = parse_xpath_bool_expr(xpath_expr, xpath_node, outer_doc) {
+    if let Some(parsed) = parse_xpath_bool_expr(xpath_expr, xpath_node, outer_doc)? {
         return apply_parsed_xpath_filter(data, &parsed);
     }
 
@@ -1983,8 +2221,8 @@ fn try_compound_xpath_filter<'a>(
         }
     };
 
-    let inner_doc =
-        uppsala::parse(xml_text.as_ref()).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let inner_doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
+        .map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Find the here() Reference/element: here() returns the <XPath> element itself.
     // Walk up from xpath_node (which IS the <XPath> element) to find its ancestor
@@ -2171,12 +2409,73 @@ fn parse_xpath_bool_expr(
     expr: &str,
     xpath_node: NodeId,
     doc: &Document<'_>,
-) -> Option<XPathBoolExpr> {
+) -> Result<Option<XPathBoolExpr>, Error> {
+    validate_xpath_depth(expr)?;
+    parse_xpath_bool_expr_at_depth(expr, xpath_node, doc, 0)
+}
+
+fn parse_xpath_bool_expr_at_depth(
+    expr: &str,
+    xpath_node: NodeId,
+    doc: &Document<'_>,
+    depth: usize,
+) -> Result<Option<XPathBoolExpr>, Error> {
+    if depth > MAX_XPATH_DEPTH {
+        return Err(xpath_depth_limit_error());
+    }
     let expr = expr.trim();
     if expr.is_empty() {
-        return None;
+        return Ok(None);
     }
 
+    // Try splitting on top-level ` and ` (outside parentheses)
+    if let Some((left, right)) = split_top_level(expr, " and ") {
+        let Some(l) = parse_xpath_bool_expr_at_depth(left, xpath_node, doc, depth + 1)? else {
+            return Ok(None);
+        };
+        let Some(r) = parse_xpath_bool_expr_at_depth(right, xpath_node, doc, depth + 1)? else {
+            return Ok(None);
+        };
+        return Ok(Some(XPathBoolExpr::And(Box::new(l), Box::new(r))));
+    }
+
+    // Try splitting on top-level ` or ` (outside parentheses)
+    if let Some((left, right)) = split_top_level(expr, " or ") {
+        let Some(l) = parse_xpath_bool_expr_at_depth(left, xpath_node, doc, depth + 1)? else {
+            return Ok(None);
+        };
+        let Some(r) = parse_xpath_bool_expr_at_depth(right, xpath_node, doc, depth + 1)? else {
+            return Ok(None);
+        };
+        return Ok(Some(XPathBoolExpr::Or(Box::new(l), Box::new(r))));
+    }
+
+    // Handle not(...) — strip outer not() and parse inner
+    if let Some(inner) = strip_not(expr) {
+        return Ok(
+            parse_xpath_bool_expr_at_depth(inner, xpath_node, doc, depth + 1)?
+                .map(|inner_expr| XPathBoolExpr::Not(Box::new(inner_expr))),
+        );
+    }
+
+    // Handle parenthesized expression
+    if expr.starts_with('(') && expr.ends_with(')') {
+        return parse_xpath_bool_expr_at_depth(
+            &expr[1..expr.len() - 1],
+            xpath_node,
+            doc,
+            depth + 1,
+        );
+    }
+
+    Ok(parse_xpath_bool_atom(expr, xpath_node, doc))
+}
+
+fn parse_xpath_bool_atom(
+    expr: &str,
+    xpath_node: NodeId,
+    doc: &Document<'_>,
+) -> Option<XPathBoolExpr> {
     // Numeric constant: any non-zero number is true, 0 is false.
     // XPath filter with "1" means "include all nodes".
     if let Ok(n) = expr.parse::<f64>() {
@@ -2185,31 +2484,6 @@ fn parse_xpath_bool_expr(
         } else {
             return Some(XPathBoolExpr::Not(Box::new(XPathBoolExpr::True)));
         }
-    }
-
-    // Try splitting on top-level ` and ` (outside parentheses)
-    if let Some((left, right)) = split_top_level(expr, " and ") {
-        let l = parse_xpath_bool_expr(left, xpath_node, doc)?;
-        let r = parse_xpath_bool_expr(right, xpath_node, doc)?;
-        return Some(XPathBoolExpr::And(Box::new(l), Box::new(r)));
-    }
-
-    // Try splitting on top-level ` or ` (outside parentheses)
-    if let Some((left, right)) = split_top_level(expr, " or ") {
-        let l = parse_xpath_bool_expr(left, xpath_node, doc)?;
-        let r = parse_xpath_bool_expr(right, xpath_node, doc)?;
-        return Some(XPathBoolExpr::Or(Box::new(l), Box::new(r)));
-    }
-
-    // Handle not(...) — strip outer not() and parse inner
-    if let Some(inner) = strip_not(expr) {
-        let inner_expr = parse_xpath_bool_expr(inner, xpath_node, doc)?;
-        return Some(XPathBoolExpr::Not(Box::new(inner_expr)));
-    }
-
-    // Handle parenthesized expression
-    if expr.starts_with('(') && expr.ends_with(')') {
-        return parse_xpath_bool_expr(&expr[1..expr.len() - 1], xpath_node, doc);
     }
 
     // self::text()
@@ -2690,7 +2964,8 @@ fn apply_parsed_xpath_filter<'a>(
         }
     };
 
-    let doc = uppsala::parse(xml_text.as_ref()).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
+        .map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Filter: include only nodes for which the expression evaluates to true
     let mut result_ids = HashSet::new();
@@ -2848,8 +3123,8 @@ fn apply_xpath_filter2_transform<'a>(
 
     match data {
         ribergshamra_transforms::TransformData::Xml { xml_text, node_set } => {
-            let doc =
-                uppsala::parse(xml_text.as_ref()).map_err(|e| Error::XmlParse(e.to_string()))?;
+            let doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
+                .map_err(|e| Error::XmlParse(e.to_string()))?;
 
             // I = input node-set (from previous transform or URI resolution)
             let input_ns = node_set.unwrap_or_else(|| NodeSet::all(&doc));
@@ -2916,8 +3191,23 @@ fn evaluate_simple_xpath(
     xpath_node: NodeId,
     outer_doc: &Document<'_>,
 ) -> Result<NodeSet, Error> {
+    validate_xpath_depth(expr)?;
+    evaluate_simple_xpath_at_depth(doc, expr, xpath_node, outer_doc, 0)
+}
+
+fn evaluate_simple_xpath_at_depth(
+    doc: &Document<'_>,
+    expr: &str,
+    xpath_node: NodeId,
+    outer_doc: &Document<'_>,
+    depth: usize,
+) -> Result<NodeSet, Error> {
     use ribergshamra_xml::nodeset::NodeSet;
     use std::collections::HashSet;
+
+    if depth > MAX_XPATH_DEPTH {
+        return Err(xpath_depth_limit_error());
+    }
 
     // `/` — selects the entire document
     if expr == "/" {
@@ -2927,8 +3217,10 @@ fn evaluate_simple_xpath(
     // Handle top-level union: `expr1 | expr2`
     // Split on top-level `|` (outside brackets)
     if let Some((left, right)) = split_xpath_union(expr) {
-        let left_ns = evaluate_simple_xpath(doc, left.trim(), xpath_node, outer_doc)?;
-        let right_ns = evaluate_simple_xpath(doc, right.trim(), xpath_node, outer_doc)?;
+        let left_ns =
+            evaluate_simple_xpath_at_depth(doc, left.trim(), xpath_node, outer_doc, depth + 1)?;
+        let right_ns =
+            evaluate_simple_xpath_at_depth(doc, right.trim(), xpath_node, outer_doc, depth + 1)?;
         return Ok(left_ns.union(&right_ns));
     }
 
@@ -3313,8 +3605,8 @@ fn apply_xpointer_transform<'a>(
 
     match data {
         ribergshamra_transforms::TransformData::Xml { xml_text, node_set } => {
-            let inner_doc =
-                uppsala::parse(xml_text.as_ref()).map_err(|e| Error::XmlParse(e.to_string()))?;
+            let inner_doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
+                .map_err(|e| Error::XmlParse(e.to_string()))?;
 
             // Build ID map
             let id_map = build_id_map(&inner_doc, &["Id", "ID", "id", "AssertionID"])?;
@@ -3387,7 +3679,7 @@ fn try_unwrap_encrypted_key(
     // Resolve the KEK from EncryptedKey's own KeyInfo
     let ek_key_info = find_child_element(doc, enc_key_node, ns::DSIG, ns::node::KEY_INFO);
 
-    let session_key_bytes = match enc_uri {
+    let session_key_bytes = zeroize::Zeroizing::new(match enc_uri {
         algorithm::KW_AES128 | algorithm::KW_AES192 | algorithm::KW_AES256 => {
             let kw = ribergshamra_crypto::keywrap::from_uri(enc_uri)?;
             let expected_kek_size = match enc_uri {
@@ -3447,7 +3739,7 @@ fn try_unwrap_encrypted_key(
                 "EncryptedKey method: {enc_uri}"
             )))
         }
-    };
+    });
 
     // Create an HMAC key from the unwrapped session key
     Ok(ribergshamra_keys::Key::new(
@@ -3614,47 +3906,37 @@ fn resolve_key_info_reference(
     doc: &Document<'_>,
     key_info_node: NodeId,
     id_map: &HashMap<String, NodeId>,
-) -> Option<NodeId> {
+) -> Result<Option<NodeId>, Error> {
     for child in doc.children(key_info_node) {
-        let elem = match doc.element(child) {
-            Some(e) => e,
-            None => continue,
+        let Some(elem) = doc.element(child) else {
+            continue;
         };
-        let child_ns = elem.name.namespace_uri.as_deref().unwrap_or("");
-        let local = &*elem.name.local_name;
-        if local == ns::node::KEY_INFO_REFERENCE && child_ns == ns::DSIG11 {
-            if let Some(uri) = elem.get_attribute(ns::attr::URI) {
-                if let Some(fragment) = uri.strip_prefix('#') {
-                    if let Some(&node_id) = id_map.get(fragment) {
-                        return Some(node_id);
+        if elem.name.local_name.as_ref() == ns::node::KEY_INFO_REFERENCE
+            && elem.name.namespace_uri.as_deref() == Some(ns::DSIG11)
+        {
+            if let Some(fragment) = elem
+                .get_attribute(ns::attr::URI)
+                .and_then(|uri| uri.strip_prefix('#'))
+            {
+                if let Some(&node_id) = id_map.get(fragment) {
+                    if doc.element(node_id).is_some_and(|target| {
+                        target.name.local_name.as_ref() == ns::node::KEY_INFO
+                            && target.name.namespace_uri.as_deref() == Some(ns::DSIG)
+                    }) {
+                        return Ok(Some(node_id));
                     }
+                    return Err(Error::XmlStructure(
+                        "KeyInfoReference target must be a ds:KeyInfo element".into(),
+                    ));
                 }
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn build_id_map(doc: &Document<'_>, attr_names: &[&str]) -> Result<HashMap<String, NodeId>, Error> {
-    let mut map = HashMap::new();
-    for id in doc.descendants(doc.root()) {
-        if let Some(elem) = doc.element(id) {
-            for attr_name in attr_names {
-                if let Some(val) = elem.get_attribute(attr_name) {
-                    if map.insert(val.to_owned(), id).is_some() {
-                        return Err(Error::XmlStructure(format!("duplicate ID: {val}")));
-                    }
-                }
-            }
-            // Also check xml:id
-            if let Some(val) = elem.get_attribute("xml:id") {
-                if map.insert(val.to_owned(), id).is_some() {
-                    return Err(Error::XmlStructure(format!("duplicate ID: {val}")));
-                }
-            }
-        }
-    }
-    Ok(map)
+    ribergshamra_xml::document::build_id_map(doc, attr_names)
 }
 
 /// Validate that a reference target is in an expected position relative to the
@@ -3749,11 +4031,9 @@ fn try_resolve_retrieval_method(
             continue;
         }
 
-        // Resolve URI to a file path
-        let file_path = resolve_retrieval_uri(uri, base_dir, url_maps)?;
-
-        // Load DER certificate
-        let cert_der = std::fs::read(&file_path).ok()?;
+        // Resolve and read under the same directory handle: a returned path
+        // alone must not carry a containment check into a separate file open.
+        let cert_der = read_retrieval_uri(uri, base_dir, url_maps)?;
 
         // Try to parse as DER X.509 certificate
         use der::Decode;
@@ -3840,58 +4120,34 @@ fn try_resolve_retrieval_method_inline(
     None
 }
 
-/// Resolve a RetrievalMethod URI to a local file path.
-fn resolve_retrieval_uri(
+/// Read a RetrievalMethod URI with the same bounded, contained file policy as
+/// detached references. Exact caller-selected file mappings authorize their
+/// selected file; directory mappings and base_dir reads remain contained.
+fn read_retrieval_uri(
     uri: &str,
     base_dir: Option<&str>,
     url_maps: &[(String, String)],
-) -> Option<std::path::PathBuf> {
-    // Check url-maps first (prefix replacement)
+) -> Option<Vec<u8>> {
+    // Caller-selected file mappings match one resource, optionally with a fragment.
     for (url, path) in url_maps {
-        if uri == url {
-            return Some(std::path::PathBuf::from(path));
+        if crate::context::url_map_matches(uri, url) {
+            return read_regular_external_file(std::path::Path::new(path)).ok();
         }
-        if uri.starts_with(url) {
-            let suffix = &uri[url.len()..];
-            let full = std::path::Path::new(path).join(suffix.trim_start_matches('/'));
-            if full.exists() {
-                return Some(full);
+        // Preserve explicit xmlsec URI-directory mappings with containment.
+        if url.ends_with('/') && std::path::Path::new(path).is_dir() {
+            if let Some(suffix) = uri.strip_prefix(url) {
+                let relative = crate::context::local_reference_relative_path(suffix).ok()??;
+                return read_existing_relative_file(std::path::Path::new(path), relative, uri)
+                    .ok()
+                    .flatten();
             }
         }
     }
-
-    // Treat as relative path from base_dir
-    if let Some(base) = base_dir {
-        let full = std::path::Path::new(base).join(uri);
-        if full.exists() {
-            return Some(full);
-        }
-        // Walk up ancestors of base_dir and try each
-        let mut ancestor = std::path::Path::new(base);
-        while let Some(parent) = ancestor.parent() {
-            let full = parent.join(uri);
-            if full.exists() {
-                return Some(full);
-            }
-            ancestor = parent;
-        }
-    }
-
-    // Try CWD-relative
-    {
-        let p = std::path::PathBuf::from(uri);
-        if p.exists() {
-            return Some(p);
-        }
-    }
-
-    // Try as absolute path
-    let p = std::path::PathBuf::from(uri);
-    if p.exists() {
-        return Some(p);
-    }
-
-    None
+    let relative = crate::context::local_reference_relative_path(uri).ok()??;
+    let base = base_dir?;
+    read_existing_relative_file(std::path::Path::new(base), relative, uri)
+        .ok()
+        .flatten()
 }
 
 /// Import an X.509 subject public key without exposing a concrete crypto type.
@@ -3935,6 +4191,214 @@ fn key_data_from_spki(
 mod tests {
     use super::*;
 
+    fn run_xslt_with_limits(
+        input: &str,
+        body: &str,
+        work: usize,
+        depth: usize,
+        output_bytes: usize,
+    ) -> Result<Vec<u8>, Error> {
+        let xml = format!(
+            r#"<xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform">{body}</xsl:stylesheet>"#
+        );
+        let doc = uppsala::parse(&xml).unwrap();
+        let stylesheet = doc.document_element().unwrap();
+        let templates = doc
+            .children(stylesheet)
+            .into_iter()
+            .filter(|id| {
+                doc.element(*id)
+                    .is_some_and(|element| element.name.local_name == "template")
+            })
+            .collect::<Vec<_>>();
+        let execution = XsltExecution {
+            output: String::new(),
+            remaining_work: work,
+            max_depth: depth,
+            max_output_bytes: output_bytes,
+        };
+        match apply_minimal_xslt_with_execution(
+            ribergshamra_transforms::TransformData::Binary(input.as_bytes().to_vec()),
+            stylesheet,
+            &templates,
+            &doc,
+            execution,
+        )? {
+            ribergshamra_transforms::TransformData::Binary(bytes) => Ok(bytes),
+            _ => panic!("minimal XSLT emits binary XML"),
+        }
+    }
+
+    #[test]
+    fn xslt_execution_bounds_default_recursion_at_the_boundary() {
+        let input = "<root><a><b>ok</b></a></root>";
+        assert_eq!(run_xslt_with_limits(input, "", 100, 3, 2).unwrap(), b"ok");
+        let error = run_xslt_with_limits(input, "", 100, 2, 2).unwrap_err();
+        assert!(error.to_string().contains("recursion limit"));
+    }
+
+    #[test]
+    fn xslt_execution_counts_repeated_template_applications() {
+        let body = r#"<xsl:template match="root"><out><xsl:apply-templates select="item"/><xsl:apply-templates select="item"/></out></xsl:template><xsl:template match="item"><p><xsl:apply-templates/></p></xsl:template>"#;
+        let input = "<root><item>A</item><item>B</item></root>";
+        assert_eq!(
+            run_xslt_with_limits(input, body, 1000, 20, 100).unwrap(),
+            b"<out><p>A</p><p>B</p><p>A</p><p>B</p></out>"
+        );
+        let error = run_xslt_with_limits(input, body, 40, 20, 100).unwrap_err();
+        assert!(error.to_string().contains("work limit"));
+    }
+
+    #[test]
+    fn xslt_output_limit_includes_escaping_and_utf8() {
+        let input = "<root>&amp;&lt;&gt;&#xD;é</root>";
+        let expected = "&amp;&lt;&gt;&#xD;é";
+        assert_eq!(
+            run_xslt_with_limits(input, "", 100, 3, expected.len()).unwrap(),
+            expected.as_bytes()
+        );
+        let error = run_xslt_with_limits(input, "", 100, 3, expected.len() - 1).unwrap_err();
+        assert!(error.to_string().contains("output byte limit"));
+
+        let mut execution = XsltExecution {
+            output: "prefix".into(),
+            remaining_work: 100,
+            max_depth: 3,
+            max_output_bytes: "prefix".len() + "&quot;&amp;".len() - 1,
+        };
+        assert!(execution.escape("\"&", true).is_err());
+        assert_eq!(
+            execution.output, "prefix",
+            "reject before appending any escaped bytes"
+        );
+    }
+
+    #[test]
+    fn xslt_value_and_attribute_copy_preserve_supported_output() {
+        let body = r#"<xsl:template match="root"><xsl:copy><xsl:value-of select="name"/></xsl:copy></xsl:template>"#;
+        let input = r#"<root a="&quot;&amp;"><name>A&amp;B</name></root>"#;
+        assert_eq!(
+            run_xslt_with_limits(input, body, 1000, 10, 100).unwrap(),
+            br#"<root a="&quot;&amp;">A&amp;B</root>"#
+        );
+    }
+
+    #[test]
+    fn certificate_free_session_key_obeys_anchored_inline_policy() {
+        let manager = hmac_keys_manager();
+        let key = manager.first_key().unwrap();
+        let mut ctx = DsigContext::new_permissive(ribergshamra_keys::KeysManager::new());
+        assert!(validate_inline_key_trust(&ctx, key).is_ok());
+        ctx.keys_manager.add_trusted_cert(vec![0]);
+        assert!(validate_inline_key_trust(&ctx, key).is_err());
+        ctx.allow_raw_inline_keyinfo_with_trust_anchors = true;
+        assert!(validate_inline_key_trust(&ctx, key).is_ok());
+        ctx.allow_raw_inline_keyinfo_with_trust_anchors = false;
+        ctx.insecure = true;
+        assert!(validate_inline_key_trust(&ctx, key).is_ok());
+    }
+
+    #[test]
+    fn reference_transform_count_is_bounded_before_dispatch() {
+        for count in [32, 33] {
+            let xml = format!("<Transforms>{}</Transforms>", "<Transform/>".repeat(count));
+            let doc = uppsala::parse(&xml).unwrap();
+            let result =
+                crate::context::validate_reference_transforms(&doc, doc.document_element());
+            assert_eq!(result.is_ok(), count == 32);
+        }
+    }
+
+    #[test]
+    fn retrieval_directory_mapping_requires_boundary_and_containment() {
+        let dir = TestDir::new();
+        let cert = dir.path.join("cert.der");
+        std::fs::write(&cert, b"synthetic certificate placeholder").unwrap();
+        let mappings = vec![("urn:fixtures/".into(), dir.as_str().into())];
+        assert_eq!(
+            read_retrieval_uri("urn:fixtures/cert.der", None, &mappings),
+            Some(b"synthetic certificate placeholder".to_vec())
+        );
+        assert!(read_retrieval_uri("urn:fixtures-lookalike/cert.der", None, &mappings).is_none());
+        assert!(read_retrieval_uri("urn:fixtures/../cert.der", None, &mappings).is_none());
+        let file = TestFile::new(b"synthetic certificate placeholder");
+        let file_mapping = vec![("urn:fixtures".into(), file.as_str().into())];
+        assert!(read_retrieval_uri("urn:fixtures-other", None, &file_mapping).is_none());
+    }
+
+    #[test]
+    fn retrieval_uri_uses_explicit_mapping_and_relative_containment() {
+        let file = TestFile::new(b"synthetic certificate placeholder");
+        assert!(read_retrieval_uri(file.as_str(), Some(file.parent_str()), &[]).is_none());
+        assert!(read_retrieval_uri("../outside.der", Some(file.parent_str()), &[]).is_none());
+        assert!(read_retrieval_uri("urn:fixture", Some(file.parent_str()), &[]).is_none());
+        assert_eq!(
+            read_retrieval_uri(file.file_name_str(), Some(file.parent_str()), &[]),
+            Some(b"synthetic certificate placeholder".to_vec())
+        );
+        let mappings = vec![("urn:fixture".into(), file.as_str().into())];
+        assert_eq!(
+            read_retrieval_uri("urn:fixture#cert", None, &mappings),
+            Some(b"synthetic certificate placeholder".to_vec())
+        );
+        assert!(read_retrieval_uri("urn:fixture-other", None, &mappings).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retrieval_uri_rejects_symlink_outside_base() {
+        let dir = TestDir::new();
+        let file = TestFile::new(b"synthetic certificate placeholder");
+        std::os::unix::fs::symlink(&file.path, dir.path.join("cert.der")).unwrap();
+        assert!(read_retrieval_uri("cert.der", Some(dir.as_str()), &[]).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retrieval_uri_reads_contained_symlinks_and_exact_file_mappings() {
+        let dir = TestDir::new();
+        let cert = dir.path.join("inside.der");
+        std::fs::write(&cert, b"bounded inside certificate bytes").unwrap();
+        std::os::unix::fs::symlink("inside.der", dir.path.join("cert.der")).unwrap();
+        let directory_mapping = vec![("urn:fixtures/".into(), dir.as_str().into())];
+        assert_eq!(
+            read_retrieval_uri("urn:fixtures/cert.der", None, &directory_mapping),
+            Some(b"bounded inside certificate bytes".to_vec())
+        );
+        assert_eq!(
+            read_retrieval_uri("cert.der", Some(dir.as_str()), &[]),
+            Some(b"bounded inside certificate bytes".to_vec())
+        );
+
+        let file = TestFile::new(b"bounded mapped certificate bytes");
+        let mapped_link = dir.path.join("mapped.der");
+        std::os::unix::fs::symlink(&file.path, &mapped_link).unwrap();
+        let file_mapping = vec![("urn:mapped".into(), mapped_link.to_str().unwrap().into())];
+        assert_eq!(
+            read_retrieval_uri("urn:mapped#cert", None, &file_mapping),
+            Some(b"bounded mapped certificate bytes".to_vec())
+        );
+    }
+
+    #[test]
+    fn key_info_reference_requires_dsig_key_info_target() {
+        for target in ["ds:KeyInfo", "ds:Object", "other:KeyInfo"] {
+            let xml = format!(
+                r##"<root xmlns:ds="{ds}" xmlns:ds11="{ds11}" xmlns:other="urn:other"><ds:KeyInfo Id="source"><ds11:KeyInfoReference URI="#target"/></ds:KeyInfo><{target} Id="target"/></root>"##,
+                ds = ns::DSIG,
+                ds11 = ns::DSIG11
+            );
+            let doc = uppsala::parse(&xml).unwrap();
+            let ids = build_id_map(&doc, &["Id"]).unwrap();
+            let result = resolve_key_info_reference(&doc, ids["source"], &ids);
+            if target == "ds:KeyInfo" {
+                assert_eq!(result.unwrap(), Some(ids["target"]));
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+
     /// Runtime-owned file used by resolver tests.
     ///
     /// The resolver behavior depends on whether a path exists, so tests create
@@ -3946,12 +4410,18 @@ mod tests {
     impl TestFile {
         /// Create a unique temporary file with `contents`.
         fn new(contents: &[u8]) -> Self {
+            Self::new_in(&std::env::temp_dir(), contents)
+        }
+
+        /// Create a unique fixture inside a particular directory without
+        /// changing the process's global current directory.
+        fn new_in(directory: &std::path::Path, contents: &[u8]) -> Self {
             let base_nonce = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system clock must be after unix epoch")
                 .as_nanos();
             for attempt in 0..100_u32 {
-                let path = std::env::temp_dir().join(format!(
+                let path = directory.join(format!(
                     "ribergshamra-dsig-reference-{pid}-{base_nonce}-{attempt}.bin",
                     pid = std::process::id()
                 ));
@@ -4439,6 +4909,123 @@ mod tests {
     }
 
     #[test]
+    fn external_uri_without_authorization_never_reads_current_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let file = TestFile::new_in(&cwd, b"unapproved current-directory bytes");
+        let xml = "<Root/>";
+        let doc = uppsala::parse(xml).unwrap();
+        let ids = HashMap::new();
+
+        for uri in [file.file_name_str(), "missing-unapproved-resource.bin"] {
+            assert!(matches!(
+                resolve_reference_uri(uri, &doc, &ids, xml, &[], None),
+                Err(Error::InvalidUri(message)) if message.starts_with("external URI not supported:")
+            ));
+            assert!(read_retrieval_uri(uri, None, &[]).is_none());
+        }
+    }
+
+    #[test]
+    fn external_uri_missing_from_explicit_base_never_falls_back_to_current_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let file = TestFile::new_in(&cwd, b"outside authorized base");
+        let base = TestDir::new();
+        let xml = "<Root/>";
+        let doc = uppsala::parse(xml).unwrap();
+        let ids = HashMap::new();
+
+        assert!(matches!(
+            resolve_reference_uri(
+                file.file_name_str(),
+                &doc,
+                &ids,
+                xml,
+                &[],
+                Some(base.as_str()),
+            ),
+            Err(Error::InvalidUri(message)) if message.starts_with("external URI not supported:")
+        ));
+        assert!(read_retrieval_uri(file.file_name_str(), Some(base.as_str()), &[]).is_none());
+    }
+
+    #[test]
+    fn external_uri_rejects_directories_for_relative_and_mapped_reads() {
+        let base = TestDir::new();
+        std::fs::create_dir(base.path.join("directory")).unwrap();
+        let xml = "<Root/>";
+        let doc = uppsala::parse(xml).unwrap();
+        let ids = HashMap::new();
+        let mappings = vec![("urn:directory".into(), base.as_str().into())];
+
+        for result in [
+            resolve_reference_uri("directory", &doc, &ids, xml, &[], Some(base.as_str())),
+            resolve_reference_uri("urn:directory", &doc, &ids, xml, &mappings, None),
+        ] {
+            assert!(matches!(
+                result,
+                Err(Error::InvalidUri(message)) if message.contains("must be a regular file")
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_uri_rejects_non_regular_socket_without_reading() {
+        // Unix-domain socket paths have a small platform-specific length cap.
+        // Keep this fixture directly in the temp directory with a short name.
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let fixture = TestFile {
+            path: std::env::temp_dir().join(format!("rg-s-{}-{nonce}", std::process::id())),
+        };
+        let path = &fixture.path;
+        let _socket = std::os::unix::net::UnixListener::bind(path).unwrap();
+        let xml = "<Root/>";
+        let doc = uppsala::parse(xml).unwrap();
+        let ids = HashMap::new();
+        let mappings = vec![("urn:socket".into(), path.to_str().unwrap().into())];
+
+        assert!(matches!(
+            resolve_reference_uri("urn:socket", &doc, &ids, xml, &mappings, None),
+            Err(Error::InvalidUri(message)) if message.contains("must be a regular file")
+        ));
+    }
+
+    #[test]
+    fn external_uri_rejects_oversized_files_before_loading() {
+        let file = TestFile::new(b"");
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file.path)
+            .unwrap()
+            .set_len(crate::context::MAX_EXTERNAL_FILE_BYTES + 1)
+            .unwrap();
+        let xml = "<Root/>";
+        let doc = uppsala::parse(xml).unwrap();
+        let ids = HashMap::new();
+        let mappings = vec![("urn:oversized".into(), file.as_str().into())];
+
+        for result in [
+            resolve_reference_uri(
+                file.file_name_str(),
+                &doc,
+                &ids,
+                xml,
+                &[],
+                Some(file.parent_str()),
+            ),
+            resolve_reference_uri("urn:oversized", &doc, &ids, xml, &mappings, None),
+        ] {
+            assert!(matches!(
+                result,
+                Err(Error::InvalidUri(message)) if message.contains("byte limit")
+            ));
+        }
+    }
+
+    #[test]
     fn resolve_reference_uri_reads_explicit_url_map() {
         // Explicit URL maps are the supported detached-content path: callers
         // decide which URI may read which file before untrusted XML is
@@ -4660,6 +5247,127 @@ mod tests {
     }
 
     #[test]
+    fn xpath_boolean_nesting_has_an_explicit_depth_limit() {
+        let doc = uppsala::parse("<Root/>").unwrap();
+        let root = doc.document_element().unwrap();
+        for wrapper in ["(", "not("] {
+            let expression = format!(
+                "{}1{}",
+                wrapper.repeat(MAX_XPATH_DEPTH),
+                ")".repeat(MAX_XPATH_DEPTH)
+            );
+            let parsed = parse_xpath_bool_expr(&expression, root, &doc)
+                .unwrap()
+                .unwrap();
+            assert!(eval_xpath_bool(&parsed, root, &doc));
+
+            let expression = format!("{wrapper}{expression})");
+            assert!(matches!(
+                parse_xpath_bool_expr(&expression, root, &doc),
+                Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+            ));
+        }
+    }
+
+    #[test]
+    fn xpath_flat_boolean_chains_share_the_recursion_limit() {
+        let doc = uppsala::parse("<Root/>").unwrap();
+        let root = doc.document_element().unwrap();
+        for operator in [" and ", " or "] {
+            let expression = vec!["1"; MAX_XPATH_DEPTH + 1].join(operator);
+            let parsed = parse_xpath_bool_expr(&expression, root, &doc)
+                .unwrap()
+                .unwrap();
+            assert!(eval_xpath_bool(&parsed, root, &doc));
+
+            let expression = format!("{expression}{operator}1");
+            assert!(matches!(
+                parse_xpath_bool_expr(&expression, root, &doc),
+                Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+            ));
+        }
+
+        // A nesting-only check would miss the combined cost of groups and a
+        // flat chain: neither part independently exceeds the delimiter cap.
+        let expression = format!(
+            "{}{}{}",
+            "(".repeat(MAX_XPATH_DEPTH / 2),
+            vec!["1"; MAX_XPATH_DEPTH / 2 + 2].join(" and "),
+            ")".repeat(MAX_XPATH_DEPTH / 2)
+        );
+        assert!(matches!(
+            parse_xpath_bool_expr(&expression, root, &doc),
+            Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+        ));
+    }
+
+    #[test]
+    fn xpath_filter2_union_chains_share_the_recursion_limit() {
+        let doc = uppsala::parse("<Root><Child/></Root>").unwrap();
+        let root = doc.document_element().unwrap();
+        let expression = vec!["/Root"; MAX_XPATH_DEPTH + 1].join(" | ");
+        let selected = evaluate_simple_xpath(&doc, &expression, root, &doc).unwrap();
+        assert!(selected.contains_id(root));
+
+        let expression = format!("{expression} | /Root");
+        assert!(matches!(
+            evaluate_simple_xpath(&doc, &expression, root, &doc),
+            Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+        ));
+    }
+
+    #[test]
+    fn xpath_transforms_reject_excessive_predicate_nesting() {
+        // Stay just above the supported boundary: the preflight must reject
+        // both transform variants before their expression parsers run.
+        let expression = format!(
+            "/Root{}1{}",
+            "[".repeat(MAX_XPATH_DEPTH + 1),
+            "]".repeat(MAX_XPATH_DEPTH + 1)
+        );
+        let xml =
+            format!("<Transform><XPath Filter=\"intersect\">{expression}</XPath></Transform>");
+        let doc = uppsala::parse(&xml).unwrap();
+        let transform = doc.document_element().unwrap();
+        let xpath1 = apply_xpath_transform(
+            ribergshamra_transforms::TransformData::xml_borrowed("<Root/>", None),
+            transform,
+            transform,
+            &doc,
+        );
+        assert!(matches!(
+            xpath1,
+            Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+        ));
+        let xpath2 = apply_xpath_filter2_transform(
+            ribergshamra_transforms::TransformData::xml_borrowed("<Root/>", None),
+            transform,
+            &doc,
+        );
+        assert!(matches!(
+            xpath2,
+            Err(Error::Transform(reason)) if reason.contains("maximum recursion depth")
+        ));
+    }
+
+    #[test]
+    fn xpath_depth_check_respects_string_literals_and_balancing() {
+        for quote in ['\'', '"'] {
+            let expression = format!(
+                "name() = {quote}{}{quote}",
+                "([)]".repeat(MAX_XPATH_DEPTH + 1)
+            );
+            assert!(validate_xpath_depth(&expression).is_ok());
+        }
+        for expression in ["([)]", "1)", "(1", "name() = 'unterminated"] {
+            assert!(matches!(
+                validate_xpath_depth(expression),
+                Err(Error::Transform(_))
+            ));
+        }
+    }
+
+    #[test]
     fn test_build_id_map_rejects_duplicate_id() {
         let xml = r#"<Root>
             <Elem1 Id="dup"/>
@@ -4804,7 +5512,8 @@ mod tests {
     // other signed XML documents originally from the Go signedxml test suite.
 
     /// Path to the signedxml test data directory (relative to crate root).
-    const SIGNEDXML_TESTDATA: &str = "../../test-data/signedxml";
+    const SIGNEDXML_TESTDATA: &str =
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/signedxml");
 
     /// Helper: load a test file, returning the content or skipping if not found.
     fn load_signedxml_testdata(filename: &str) -> String {
@@ -5209,19 +5918,19 @@ mod tests {
     /// The signed document with its inline signer chain.
     const X509DATA_TEST_XML: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/aleksey-xmldsig-01/x509data-test.xml"
+        "/tests/fixtures/aleksey-xmldsig-01/x509data-test.xml"
     ));
     /// The correct anchor (Aleksey test root) the inline chain terminates at.
     /// Only used by the `legacy-algorithms`-gated positive test below.
     #[cfg(feature = "legacy-algorithms")]
     const CACERT_PEM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/keys/cacert.pem"
+        "/tests/fixtures/keys/cacert.pem"
     ));
     /// An unrelated CA (Merlin) the inline chain does NOT terminate at.
     const WRONG_CA_PEM: &str = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-data/merlin-xmldsig-twenty-three/certs/ca.pem"
+        "/tests/fixtures/merlin-xmldsig-twenty-three/certs/ca.pem"
     ));
 
     /// Decode a single-certificate PEM to DER.

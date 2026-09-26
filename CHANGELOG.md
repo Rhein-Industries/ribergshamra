@@ -5,6 +5,25 @@ ribergshamra is Rhein Industries' maintained fork of
 from 0.10.0 on describe ribergshamra. The history of bergshamra up to 0.9.1,
 the release ribergshamra was forked from, is kept unchanged below.
 
+## 0.11.0 — 2026-09-26
+
+- Bound XML parsing, DOM, XPath/XPointer recursion, transform work and output
+  sizes. External references require an explicit base directory and bounded
+  regular files; Unix traversal uses descriptor-relative checks.
+- Disable RustCrypto RSA decryption by default. The separate
+  `legacy-rsa-decryption` feature restores compatibility with the unresolved
+  upstream timing risk; legacy algorithms alone do not enable it.
+- Correct C14N 1.1 inheritance/base joining and excluded-attribute handling,
+  issuer/serial key selection and issuer-name generation. Validate complete
+  direct CRLs against the authenticated current issuer and reject unsupported
+  restrictive CRL forms.
+- Require the new crypto and LTV minor releases and remove temporary source
+  review overrides. Native/provider CI now checks the published, locked graph.
+- Preserve Windows drive prefixes for CLI HMAC key paths. Reduce parsing and
+  canonicalization allocations and avoid repeated XPath namespace work.
+- Include license notices and the existing unit-test fixtures in each package;
+  keep the historical interoperability corpus and hardware setup in the repository.
+
 ## 0.10.0 — 2026-09-24 — first ribergshamra release
 
 Changes relative to bergshamra 0.9.1

@@ -12,7 +12,7 @@
 //! - Optionally preserves or strips comments
 //! - Supports document-subset canonicalization via NodeSet
 
-use crate::render::{Attr, NsDecl};
+use crate::render::{write_sorted_attributes, Attr, NsDecl};
 use crate::{escape, C14nSink};
 use ribergshamra_core::Error;
 use ribergshamra_xml::nodeset::NodeSet;
@@ -90,13 +90,16 @@ pub fn canonicalize_with_options_to<W: C14nSink>(
     c14n11_mode: bool,
     output: &mut W,
 ) -> Result<(), Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     let mut ctx = C14nContext {
         doc,
         with_comments,
         node_set,
         c14n11_mode,
     };
-    ctx.process_node(doc.root(), output, &BTreeMap::new())
+    let mut limited = crate::LimitedSink::new(output);
+    ctx.process_node(doc.root(), &mut limited, &BTreeMap::new())?;
+    limited.finish()
 }
 
 struct C14nContext<'a, 'doc> {
@@ -130,6 +133,7 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
         output: &mut W,
         inherited_ns: &BTreeMap<String, String>,
     ) -> Result<(), Error> {
+        output.check()?;
         match self.doc.node_kind(id) {
             Some(NodeKind::Document) => {
                 for child in self.doc.children_iter(id) {
@@ -207,7 +211,7 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
             }
             _ => {}
         }
-        Ok(())
+        output.check()
     }
 
     /// Process an element and its descendants.
@@ -222,6 +226,7 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
         output: &mut W,
         inherited_ns: &BTreeMap<String, String>,
     ) -> Result<(), Error> {
+        output.check()?;
         let visible = self.is_visible(id);
 
         if visible {
@@ -292,7 +297,10 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
             // Skip if the node set excludes attribute nodes entirely.
             let attrs_excluded = self.node_set.is_some_and(|ns| ns.excludes_attrs());
             let mut attrs: Vec<Attr> = Vec::new();
-            if !attrs_excluded {
+            // Whole-document C14N can borrow attributes directly from the DOM.
+            // Keep owned attributes for subsets, whose xml:* inheritance and
+            // C14N 1.1 xml:base handling may synthesize or replace values.
+            if self.node_set.is_some() && !attrs_excluded {
                 let elem = self.doc.element(id).unwrap();
                 for attr in &elem.attributes {
                     let ns_uri = attr.name.namespace_uri.as_deref().unwrap_or("");
@@ -309,7 +317,7 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
                         value: attr.value.to_string(),
                     });
                 }
-            } // end if !attrs_excluded
+            }
             attrs.sort();
 
             // Also check for xml:* attributes that need to be inherited.
@@ -327,28 +335,22 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
                     let extra = self.collect_inherited_xml_attrs(id, &attrs);
                     attrs.extend(extra);
 
-                    // C14N 1.1: absolutize xml:base for elements whose parent
-                    // is not in the node set.
+                    // C14N 1.1 joins only bases on contiguously omitted
+                    // ancestors, stopping at the nearest visible ancestor.
                     if self.c14n11_mode {
-                        let abs_base = compute_absolute_base_uri(self.doc, id);
                         let xml_ns = "http://www.w3.org/XML/1998/namespace";
-                        if let Some(attr) = attrs
-                            .iter_mut()
-                            .find(|a| a.ns_uri == xml_ns && a.local_name == "base")
-                        {
-                            // Replace the value with the absolute base URI
-                            if !abs_base.is_empty() {
-                                attr.value = abs_base;
-                            }
-                        } else if !abs_base.is_empty() {
-                            // Synthesize xml:base if there are ancestor base URIs
-                            // that would change the effective base
-                            attrs.push(Attr {
-                                ns_uri: xml_ns.to_owned(),
-                                local_name: "base".to_owned(),
-                                qualified_name: "xml:base".to_owned(),
-                                value: abs_base,
+                        if let Some(base) = self.omitted_base_uri(id) {
+                            attrs.retain(|attr| {
+                                !(attr.ns_uri == xml_ns && attr.local_name == "base")
                             });
+                            if !base.is_empty() {
+                                attrs.push(Attr {
+                                    ns_uri: xml_ns.to_owned(),
+                                    local_name: "base".to_owned(),
+                                    qualified_name: "xml:base".to_owned(),
+                                    value: base,
+                                });
+                            }
                         }
                     }
                 }
@@ -362,13 +364,21 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
             // Output: <name ns-decls attrs>
             output.write_byte(b'<');
             output.write(elem_name.as_bytes());
+            output.check()?;
             for ns_decl in &ns_decls {
-                output.write(ns_decl.render().as_bytes());
+                ns_decl.write_to(output);
+                output.check()?;
             }
-            for attr in &attrs {
-                output.write(attr.render().as_bytes());
+            if self.node_set.is_none() {
+                write_sorted_attributes(&self.doc.element(id).unwrap().attributes, output)?;
+            } else {
+                for attr in &attrs {
+                    attr.write_to(output);
+                    output.check()?;
+                }
             }
             output.write_byte(b'>');
+            output.check()?;
 
             // Process children with updated namespace context.
             // Per C14N spec (section 2.3): the "nearest ancestor element in
@@ -453,7 +463,8 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
                 }
                 ns_decls.sort();
                 for ns_decl in &ns_decls {
-                    output.write(ns_decl.render().as_bytes());
+                    ns_decl.write_to(output);
+                    output.check()?;
                 }
             }
 
@@ -466,7 +477,7 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
                 self.process_node(child, output, inherited_ns)?;
             }
         }
-        Ok(())
+        output.check()
     }
 
     /// For document-subset C14N 1.0: collect xml:* attributes inherited from
@@ -484,6 +495,9 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
                 for attr in &elem.attributes {
                     if attr.name.namespace_uri.as_deref() == Some(xml_ns) {
                         let name = &*attr.name.local_name;
+                        if self.c14n11_mode && !matches!(name, "lang" | "space") {
+                            continue;
+                        }
                         // Nearest ancestor value wins (first occurrence)
                         if !inherited_xml.contains_key(name) {
                             inherited_xml.insert(name.to_owned(), attr.value.to_string());
@@ -509,6 +523,47 @@ impl<'a, 'doc> C14nContext<'a, 'doc> {
             }
         }
         result
+    }
+
+    fn omitted_base_uri(&self, id: NodeId) -> Option<String> {
+        let base = |node| {
+            self.doc.element(node).and_then(|element| {
+                element
+                    .attributes
+                    .iter()
+                    .find(|attr| {
+                        attr.name.namespace_uri.as_deref()
+                            == Some("http://www.w3.org/XML/1998/namespace")
+                            && attr.name.local_name.as_ref() == "base"
+                    })
+                    .map(|attr| attr.value.to_string())
+            })
+        };
+        let mut bases = Vec::new();
+        if let Some(value) = base(id) {
+            bases.push(value);
+        }
+        let mut omitted_base = false;
+        let mut current = self.doc.parent(id);
+        while let Some(ancestor) = current {
+            if self.doc.element(ancestor).is_some() && self.is_visible(ancestor) {
+                break;
+            }
+            if let Some(value) = base(ancestor) {
+                bases.push(value);
+                omitted_base = true;
+            }
+            current = self.doc.parent(ancestor);
+        }
+        if !omitted_base {
+            return None;
+        }
+        let mut values = bases.into_iter();
+        let mut joined = values.next().unwrap_or_default();
+        for ancestor in values {
+            joined = resolve_uri_reference(&ancestor, &joined);
+        }
+        Some(joined)
     }
 }
 
@@ -598,113 +653,214 @@ fn find_attr_prefix(attr: &uppsala::Attribute<'_>) -> Option<String> {
     }
 }
 
-/// Compute the absolute base URI for an element by walking up ancestors
-/// and resolving xml:base attributes according to RFC 3986.
-///
-/// Used by C14N 1.1 for document-subset canonicalization when an element's
-/// parent is not in the node set.
-fn compute_absolute_base_uri(doc: &Document<'_>, id: NodeId) -> String {
-    let xml_ns = "http://www.w3.org/XML/1998/namespace";
+/// C14N 1.1 join-URI-References: RFC 3986 component resolution with
+/// relative bases, retained leading parent segments, collapsed slashes,
+/// trailing parent-directory handling, and ignored fragments (§2.4).
+fn resolve_uri_reference(base: &str, reference: &str) -> String {
+    let base = UriParts::parse(base);
+    let base_path = if base.path.rsplit('/').next() == Some("..") {
+        format!("{}/", base.path)
+    } else {
+        base.path.to_owned()
+    };
+    let base = UriParts {
+        path: &base_path,
+        ..base
+    };
+    let reference = UriParts::parse(reference);
+    let (scheme, authority, path, query) = if reference.scheme.is_some() {
+        (
+            reference.scheme,
+            reference.authority,
+            remove_base_dot_segments(reference.path),
+            reference.query,
+        )
+    } else if reference.authority.is_some() {
+        (
+            base.scheme,
+            reference.authority,
+            remove_base_dot_segments(reference.path),
+            reference.query,
+        )
+    } else if reference.path.is_empty() {
+        (
+            base.scheme,
+            base.authority,
+            base.path.to_owned(),
+            reference.query.or(base.query),
+        )
+    } else {
+        let path = if reference.path.starts_with('/') {
+            reference.path.to_owned()
+        } else if base.authority.is_some() && base.path.is_empty() {
+            format!("/{}", reference.path)
+        } else {
+            let cut = base.path.rfind('/').map_or(0, |index| index + 1);
+            format!("{}{}", &base.path[..cut], reference.path)
+        };
+        (
+            base.scheme,
+            base.authority,
+            remove_base_dot_segments(&path),
+            reference.query,
+        )
+    };
+    let mut result = String::new();
+    if let Some(scheme) = scheme {
+        result.push_str(scheme);
+        result.push(':');
+    }
+    if let Some(authority) = authority {
+        result.push_str("//");
+        result.push_str(authority);
+    }
+    result.push_str(&path);
+    if let Some(query) = query {
+        result.push('?');
+        result.push_str(query);
+    }
+    result
+}
 
-    // Collect xml:base values from the element up to the root.
-    // Order: element first, then parent, grandparent, etc.
-    let mut base_chain: Vec<String> = Vec::new();
-    let mut current = Some(id);
-    while let Some(n) = current {
-        if let Some(elem) = doc.element(n) {
-            for attr in &elem.attributes {
-                if attr.name.namespace_uri.as_deref() == Some(xml_ns)
-                    && &*attr.name.local_name == "base"
-                {
-                    base_chain.push(attr.value.to_string());
-                    break;
-                }
+struct UriParts<'a> {
+    scheme: Option<&'a str>,
+    authority: Option<&'a str>,
+    path: &'a str,
+    query: Option<&'a str>,
+}
+
+impl<'a> UriParts<'a> {
+    fn parse(uri: &'a str) -> Self {
+        let without_fragment = uri.split_once('#').map_or(uri, |(head, _)| head);
+        let (mut path, query) = without_fragment
+            .split_once('?')
+            .map_or((without_fragment, None), |(path, query)| {
+                (path, Some(query))
+            });
+        let mut scheme = None;
+        if let Some((candidate, remainder)) = path.split_once(':') {
+            let mut chars = candidate.chars();
+            if chars
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic())
+                && chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '.'))
+            {
+                scheme = Some(candidate);
+                path = remainder;
             }
         }
-        current = doc.parent(n);
-    }
-
-    if base_chain.is_empty() {
-        return String::new();
-    }
-
-    // Resolve from root to element: the last item is closest to root.
-    // Start with the most distant ancestor's base and resolve each
-    // descendant's base against it.
-    base_chain.reverse(); // now root-first order
-    let mut absolute = String::new();
-    for base_val in &base_chain {
-        if absolute.is_empty() {
-            absolute = base_val.clone();
+        let authority = if let Some(rest) = path.strip_prefix("//") {
+            let end = rest.find('/').unwrap_or(rest.len());
+            path = &rest[end..];
+            Some(&rest[..end])
         } else {
-            absolute = resolve_uri_reference(&absolute, base_val);
-        }
-    }
-
-    absolute
-}
-
-/// Simple RFC 3986 URI reference resolution.
-///
-/// Resolves `reference` against `base_uri`.
-fn resolve_uri_reference(base: &str, reference: &str) -> String {
-    // If reference has a scheme, it's absolute -- use as-is
-    if reference.contains("://") {
-        return reference.to_owned();
-    }
-
-    // Parse base URI components
-    let (scheme, authority, base_path) = parse_uri_components(base);
-
-    if reference.starts_with('/') {
-        // Absolute path reference: keep scheme + authority, replace path
-        format!("{scheme}{authority}{reference}")
-    } else if reference.is_empty() {
-        base.to_owned()
-    } else {
-        // Relative path: merge with base path
-        let merged = if authority.is_empty() && base_path.is_empty() {
-            format!("/{reference}")
-        } else {
-            // Remove everything after the last '/' in base path
-            let last_slash = base_path.rfind('/').map_or(0, |i| i + 1);
-            format!("{}{}", &base_path[..last_slash], reference)
+            None
         };
-        format!("{scheme}{authority}{merged}")
+        Self {
+            scheme,
+            authority,
+            path,
+            query,
+        }
     }
 }
 
-/// Parse a URI into (scheme_with_colon, authority_with_slashes, path).
-/// E.g. "http://example.org/path/" -> ("http:", "//example.org", "/path/")
-fn parse_uri_components(uri: &str) -> (String, String, String) {
-    // Find scheme
-    let (scheme, rest) = if let Some(pos) = uri.find("://") {
-        (uri[..pos + 1].to_owned(), &uri[pos + 1..])
-    } else {
-        (String::new(), uri)
-    };
-
-    // Find authority
-    let (authority, path) = if let Some(stripped) = rest.strip_prefix("//") {
-        // Authority is //host[:port] up to next '/'
-        if let Some(slash_pos) = stripped.find('/') {
-            (
-                rest[..slash_pos + 2].to_owned(),
-                rest[slash_pos + 2..].to_owned(),
-            )
-        } else {
-            (rest.to_owned(), String::new())
+fn remove_base_dot_segments(path: &str) -> String {
+    let absolute = path.starts_with('/');
+    let trailing = path.ends_with('/') || matches!(path.rsplit('/').next(), Some("." | ".."));
+    let mut segments = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." if segments.last().is_some_and(|last| *last != "..") => {
+                segments.pop();
+            }
+            ".." if !absolute => segments.push(segment),
+            ".." => {}
+            _ => segments.push(segment),
         }
+    }
+    let mut result = if absolute {
+        format!("/{}", segments.join("/"))
     } else {
-        (String::new(), rest.to_owned())
+        segments.join("/")
     };
-
-    (scheme, authority, path)
+    if trailing && !result.is_empty() && !result.ends_with('/') {
+        result.push('/');
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn c14n11_inherits_only_language_and_space() {
+        let doc = uppsala::parse(
+            "<r xml:id='parent' xml:lang='en' xml:space='preserve' xml:custom='x'><leaf/></r>",
+        )
+        .unwrap();
+        let leaf = doc.get_elements_by_tag_name("leaf")[0];
+        let subset = NodeSet::tree_without_comments(leaf, &doc);
+        let out = canonicalize_with_options(&doc, false, Some(&subset), true).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<leaf xml:lang=\"en\" xml:space=\"preserve\"></leaf>"
+        );
+        let legacy = canonicalize_with_options(&doc, false, Some(&subset), false).unwrap();
+        assert!(String::from_utf8(legacy)
+            .unwrap()
+            .contains("xml:id=\"parent\""));
+    }
+
+    #[test]
+    fn c14n11_base_fixup_stops_at_visible_ancestor() {
+        use ribergshamra_xml::nodeset::NodeSetType;
+        let doc = uppsala::parse("<r xml:base='outer/path'><a xml:base='..'><b xml:base='..'><leaf xml:base='x'/></b></a></r>").unwrap();
+        let root = doc.document_element().unwrap();
+        let leaf = doc.get_elements_by_tag_name("leaf")[0];
+        let subset = NodeSet::from_ids(
+            [root.index(), leaf.index()].into_iter().collect(),
+            NodeSetType::Normal,
+        );
+        let out = canonicalize_with_options(&doc, false, Some(&subset), true).unwrap();
+        assert_eq!(
+            String::from_utf8(out).unwrap(),
+            "<r xml:base=\"outer/path\"><leaf xml:base=\"../../x\"></leaf></r>"
+        );
+    }
+
+    #[test]
+    fn c14n11_base_join_preserves_relative_paths_and_components() {
+        for (base, reference, expected) in [
+            ("abc/", "../", ""),
+            ("../", "../", "../../"),
+            ("..", "..", "../../"),
+            ("..", "", "../"),
+            ("a/..", "?q", "a/../?q"),
+            (
+                "http://host/a/b?old",
+                "../x?new#ignored",
+                "http://host/x?new",
+            ),
+            ("http://host/a", "//other/x", "http://other/x"),
+            ("http://host/a?old", "?new#ignored", "http://host/a?new"),
+            ("http://host/a", "urn:example:x#ignored", "urn:example:x"),
+            ("a//b/", "../x", "a/x"),
+        ] {
+            assert_eq!(
+                resolve_uri_reference(base, reference),
+                expected,
+                "{base} + {reference}"
+            );
+        }
+        let doc = uppsala::parse("<r xml:base='abc/'><a xml:base='../'><leaf/></a></r>").unwrap();
+        let leaf = doc.get_elements_by_tag_name("leaf")[0];
+        let subset = NodeSet::tree_without_comments(leaf, &doc);
+        let out = canonicalize_with_options(&doc, false, Some(&subset), true).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap(), "<leaf></leaf>");
+    }
 
     #[test]
     fn test_simple_c14n() {

@@ -9,7 +9,7 @@ use uppsala::NodeKind;
 
 /// Extract text content from an XML document, optionally filtered by a node set.
 fn extract_text_content(xml_text: &str, node_set: Option<&NodeSet>) -> Result<String, Error> {
-    let doc = uppsala::parse(xml_text)
+    let doc = ribergshamra_xml::limits::parse(xml_text)
         .map_err(|e| Error::Transform(format!("base64: XML parse: {e}")))?;
     let mut text = String::new();
     let root = doc.root();

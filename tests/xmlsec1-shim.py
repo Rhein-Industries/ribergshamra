@@ -388,6 +388,19 @@ def build_ribergshamra_cmd(ctx):
         if os.path.isdir(test_data_dir):
             cmd.extend(["--url-map", f"tests/={test_data_dir}"])
 
+            # The runner verifies newly signed output from /tmp, while these
+            # trusted fixture References name payloads beside their templates.
+            # Authorize the two known files explicitly rather than depending
+            # on the verifier's former current-directory fallback. Explicit
+            # maps from the runner above retain precedence.
+            detached_fixtures = {
+                "c14n11/xml-base-input.xml": "xmldsig2ed-tests/c14n11/xml-base-input.xml",
+                "relationship/xml-base-input.xml": "aleksey-xmldsig-01/relationship/xml-base-input.xml",
+            }
+            for uri, relative_file in detached_fixtures.items():
+                fixture_file = os.path.join(test_data_dir, relative_file)
+                cmd.extend(["--url-map", f"{uri}={fixture_file}"])
+
     # ID attrs
     for attr in ctx["id_attrs"]:
         cmd.extend(["--id-attr", attr])

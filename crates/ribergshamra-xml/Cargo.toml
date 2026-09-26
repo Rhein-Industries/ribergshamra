@@ -14,3 +14,4 @@ description = "XML DOM abstraction for ribergshamra, the maintained fork of the 
 [dependencies]
 ribergshamra-core.workspace = true
 uppsala.workspace = true
+quick-xml.workspace = true

@@ -104,6 +104,7 @@ pub fn load_pem_auto(pem_data: &[u8], password: Option<&str>) -> Result<Key, Err
     let first = first_pem_block(pem_data).unwrap_or(pem_data);
     let (label, der) = pem_rfc7468::decode_vec(first)
         .map_err(|err| Error::Key(format!("failed to decode PEM: {err}")))?;
+    let der = zeroize::Zeroizing::new(der);
     match label {
         "PRIVATE KEY" => load_private_key_pkcs8_der(&der),
         "PUBLIC KEY" => load_spki_der(&der),
@@ -229,9 +230,10 @@ pub fn try_load_pq_public_key(_spki_der: &[u8]) -> Option<Key> {
     None
 }
 
-fn pem_der(pem_data: &[u8], expected_label: &str) -> Result<Vec<u8>, Error> {
+fn pem_der(pem_data: &[u8], expected_label: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, Error> {
     let (label, der) = pem_rfc7468::decode_vec(pem_data)
         .map_err(|err| Error::Key(format!("failed to decode PEM: {err}")))?;
+    let der = zeroize::Zeroizing::new(der);
     if label != expected_label {
         return Err(Error::Key(format!(
             "expected {expected_label} PEM label, got {label}"

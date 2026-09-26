@@ -8,6 +8,7 @@
 //! instead of using this module directly.
 
 use crate::{escape, C14nSink};
+use ribergshamra_core::Error;
 
 /// A namespace declaration prepared for canonical XML output.
 ///
@@ -144,6 +145,55 @@ impl PartialOrd for Attr {
     }
 }
 
+/// Sort borrowed DOM attributes without cloning their names or values.
+///
+/// This is used only when canonicalization does not synthesize inherited
+/// attributes. The owned [`Attr`] path remains available for document subsets
+/// that need to materialize `xml:*` attributes or resolve `xml:base`.
+pub(crate) fn write_sorted_attributes<W: C14nSink>(
+    attributes: &[uppsala::Attribute<'_>],
+    output: &mut W,
+) -> Result<(), Error> {
+    output.check()?;
+    match attributes {
+        [] => {}
+        [attribute] => write_attribute(attribute, output),
+        _ => {
+            let mut sorted: Vec<_> = attributes.iter().collect();
+            sorted.sort_by(|a, b| {
+                a.name
+                    .namespace_uri
+                    .as_deref()
+                    .unwrap_or("")
+                    .cmp(b.name.namespace_uri.as_deref().unwrap_or(""))
+                    .then(a.name.local_name.cmp(&b.name.local_name))
+            });
+            for attribute in sorted {
+                write_attribute(attribute, output);
+                output.check()?;
+            }
+        }
+    }
+    output.check()
+}
+
+fn write_attribute<W: C14nSink>(attribute: &uppsala::Attribute<'_>, output: &mut W) {
+    output.write_byte(b' ');
+    let prefix = match attribute.name.namespace_uri.as_deref() {
+        Some("http://www.w3.org/XML/1998/namespace") => Some("xml"),
+        Some(_) => attribute.name.prefix.as_deref(),
+        None => None,
+    };
+    if let Some(prefix) = prefix.filter(|prefix| !prefix.is_empty()) {
+        output.write(prefix.as_bytes());
+        output.write_byte(b':');
+    }
+    output.write(attribute.name.local_name.as_bytes());
+    output.write(b"=\"");
+    escape::escape_attr_into(output, &attribute.value);
+    output.write_byte(b'"');
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +220,35 @@ mod tests {
         let mut streamed = Vec::new();
         attribute.write_to(&mut streamed);
         assert_eq!(streamed, attribute.render().as_bytes());
+    }
+
+    #[test]
+    fn borrowed_attributes_sort_by_namespace_uri_and_escape_values() {
+        let doc = uppsala::parse(
+            r#"<r xmlns:z="urn:a" xmlns:a="urn:z" a:a="last" z:b="second" xml:lang="en" plain="café &amp;&lt;&quot;&#x9;&#xA;&#xD;" z:a="first"/>"#,
+        )
+        .unwrap();
+        let attributes = &doc
+            .element(doc.document_element().unwrap())
+            .unwrap()
+            .attributes;
+        let mut output = Vec::new();
+        write_sorted_attributes(attributes, &mut output).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            " plain=\"café &amp;&lt;&quot;&#x9;&#xA;&#xD;\" xml:lang=\"en\" z:a=\"first\" z:b=\"second\" a:a=\"last\""
+        );
+    }
+
+    #[test]
+    fn borrowed_single_attribute_keeps_the_xml_prefix() {
+        let doc = uppsala::parse(r#"<r xml:space="preserve"/>"#).unwrap();
+        let attributes = &doc
+            .element(doc.document_element().unwrap())
+            .unwrap()
+            .attributes;
+        let mut output = b"prefix".to_vec();
+        write_sorted_attributes(attributes, &mut output).unwrap();
+        assert_eq!(output, b"prefix xml:space=\"preserve\"");
     }
 }
