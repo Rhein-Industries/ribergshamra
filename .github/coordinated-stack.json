@@ -6,7 +6,7 @@
     }
   },
   "ritsp-ltv": {
-    "revision": "f15d56396dc0764b98d7bb352c1528411897b031",
+    "revision": "61da6537128ea8e73beeef9975e8ada77759191d",
     "packages": {
       "ritsp-ltv": "."
     }

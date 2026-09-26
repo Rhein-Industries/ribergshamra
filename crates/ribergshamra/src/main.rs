@@ -1101,7 +1101,10 @@ fn build_keys_manager(
     // Load HMAC key (supports NAME:FILE or just FILE)
     if let Some(spec) = hmac_key_spec {
         let spec_str = spec.to_string_lossy();
-        let (name, path) = if let Some((n, f)) = spec_str.split_once(':') {
+        // A Windows drive colon belongs to an absolute file path, not a key name.
+        let (name, path) = if spec.is_absolute() {
+            (None, spec.clone())
+        } else if let Some((n, f)) = spec_str.split_once(':') {
             // Check if it looks like NAME:FILE (name won't contain path separators)
             if !n.contains('/') && !n.contains('\\') && !f.is_empty() {
                 (Some(n.to_owned()), PathBuf::from(f))
