@@ -179,13 +179,23 @@ impl KeyTransportAlgorithm for RipteringKeyTransport {
         private_key: &riptering::SoftwareKey,
         encrypted: &[u8],
     ) -> Result<Vec<u8>, Error> {
-        riptering::keytransport::kt_decrypt(
-            self.algo,
-            private_key,
-            encrypted,
-            self.label.as_deref(),
-        )
-        .map_err(crate::map_riptering_err)
+        #[cfg(all(feature = "rustcrypto", not(feature = "legacy-rsa-decryption")))]
+        {
+            let _ = (private_key, encrypted);
+            Err(Error::UnsupportedAlgorithm(
+                "RustCrypto RSA decryption is disabled; legacy-rsa-decryption explicitly opts into its unpatched timing risk".into(),
+            ))
+        }
+        #[cfg(any(not(feature = "rustcrypto"), feature = "legacy-rsa-decryption"))]
+        {
+            riptering::keytransport::kt_decrypt(
+                self.algo,
+                private_key,
+                encrypted,
+                self.label.as_deref(),
+            )
+            .map_err(crate::map_riptering_err)
+        }
     }
 }
 
@@ -260,7 +270,12 @@ mod tests {
 
         let encrypted = transport.encrypt(&public, plaintext).unwrap();
         assert_ne!(encrypted, plaintext);
+        #[cfg(any(not(feature = "rustcrypto"), feature = "legacy-rsa-decryption"))]
         assert_eq!(transport.decrypt(&private, &encrypted).unwrap(), plaintext);
+        #[cfg(all(feature = "rustcrypto", not(feature = "legacy-rsa-decryption")))]
+        assert!(matches!(transport.decrypt(&private, &encrypted),
+            Err(ribergshamra_core::Error::UnsupportedAlgorithm(message))
+                if message.contains("legacy-rsa-decryption")));
     }
 
     #[cfg(feature = "legacy-algorithms")]
@@ -286,6 +301,11 @@ mod tests {
         let plaintext = b"legacy document content-encryption key";
 
         let encrypted = transport.encrypt(&public, plaintext).unwrap();
+        #[cfg(any(not(feature = "rustcrypto"), feature = "legacy-rsa-decryption"))]
         assert_eq!(transport.decrypt(&private, &encrypted).unwrap(), plaintext);
+        #[cfg(all(feature = "rustcrypto", not(feature = "legacy-rsa-decryption")))]
+        assert!(matches!(transport.decrypt(&private, &encrypted),
+            Err(ribergshamra_core::Error::UnsupportedAlgorithm(message))
+                if message.contains("legacy-rsa-decryption")));
     }
 }

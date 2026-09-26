@@ -765,7 +765,7 @@ fn cmd_encrypt(
 /// Check if the template has a wrapper element around EncryptedData.
 /// Returns true if EncryptedData is NOT the root element (i.e., it's embedded in a document).
 fn template_has_wrapper(template_xml: &str) -> bool {
-    if let Ok(doc) = uppsala::parse(template_xml) {
+    if let Ok(doc) = ribergshamra_xml::limits::parse(template_xml) {
         if let Some(root_id) = doc.document_element() {
             if let Some(elem) = doc.element(root_id) {
                 return &*elem.name.local_name != "EncryptedData";
@@ -790,7 +790,8 @@ fn extract_node_data(
 
     let xml_str = std::str::from_utf8(data)
         .map_err(|e| Error::Other(format!("data is not valid UTF-8: {e}")))?;
-    let doc = uppsala::parse(xml_str).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc =
+        ribergshamra_xml::limits::parse(xml_str).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     let target_node_id = if let Some(name) = node_name {
         // Parse namespace:localname format

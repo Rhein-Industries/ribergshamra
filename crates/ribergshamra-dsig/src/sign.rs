@@ -5,7 +5,8 @@
 //! Signs an XML document using a template with empty DigestValue/SignatureValue.
 
 use crate::context::{
-    local_reference_relative_path, read_existing_relative_file, url_map_matches, DsigContext,
+    local_reference_relative_path, read_existing_relative_file, read_regular_external_file,
+    url_map_matches, DsigContext,
 };
 use ribergshamra_c14n::C14nMode;
 use ribergshamra_core::{algorithm, ns, Error};
@@ -32,6 +33,7 @@ use uppsala::{Document, NodeId, QName, XmlWriter};
 /// missing, an algorithm is unsupported, key material cannot be resolved, a
 /// transform fails, or the final signature cannot be produced.
 pub fn sign(ctx: &DsigContext, template_xml: &str) -> Result<String, Error> {
+    ribergshamra_xml::limits::validate_input_size(template_xml.len())?;
     sign_owned(ctx, template_xml.to_owned())
 }
 
@@ -55,7 +57,8 @@ pub fn sign(ctx: &DsigContext, template_xml: &str) -> Result<String, Error> {
 /// Returns an error when parsing, reference resolution, transform execution,
 /// digesting, key resolution, or signature generation fails.
 pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, Error> {
-    let doc = uppsala::parse(&result_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc =
+        ribergshamra_xml::limits::parse(&result_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Build ID map
     let mut id_attrs: Vec<&str> = vec!["Id", "ID", "id", "AssertionID"];
@@ -107,7 +110,8 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
 
     for ref_idx in 0..ref_count {
         // Re-parse current state so same-document refs see filled DigestValues
-        let cur_doc = uppsala::parse(&result_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+        let cur_doc = ribergshamra_xml::limits::parse(&result_xml)
+            .map_err(|e| Error::XmlParse(e.to_string()))?;
         let cur_id_map = build_id_map(&cur_doc, &id_attrs)?;
         let cur_sig = find_element(&cur_doc, ns::DSIG, ns::node::SIGNATURE)
             .ok_or_else(|| Error::MissingElement("Signature".into()))?;
@@ -140,6 +144,7 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
 
         let transforms_node =
             find_child_element(&cur_doc, reference, ns::DSIG, ns::node::TRANSFORMS);
+        crate::context::validate_reference_transforms(&cur_doc, transforms_node)?;
 
         // The common enveloped-signature + C14N case can be digested directly
         // from the parsed document. Any transform chain outside that narrow
@@ -182,8 +187,7 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
                 let mut resolved = None;
                 for (map_url, file_path) in &ctx.url_maps {
                     if url_map_matches(uri, map_url) {
-                        let bytes = std::fs::read(file_path)
-                            .map_err(|e| Error::Other(format!("url-map {file_path}: {e}")))?;
+                        let bytes = read_regular_external_file(std::path::Path::new(file_path))?;
                         resolved = Some(ribergshamra_transforms::TransformData::Binary(bytes));
                         break;
                     }
@@ -255,7 +259,8 @@ pub fn sign_owned(ctx: &DsigContext, mut result_xml: String) -> Result<String, E
 
     // Now canonicalize SignedInfo and compute signature
     // Re-parse the updated XML
-    let updated_doc = uppsala::parse(&result_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let updated_doc =
+        ribergshamra_xml::limits::parse(&result_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
     let updated_sig = find_element(&updated_doc, ns::DSIG, ns::node::SIGNATURE)
         .ok_or_else(|| Error::MissingElement("Signature".into()))?;
     let updated_signed_info =
@@ -527,7 +532,7 @@ pub fn sign_enveloped_document(
         enveloped = algorithm::ENVELOPED_SIGNATURE,
     );
 
-    let sig_doc = uppsala::parse(&signature)
+    let sig_doc = ribergshamra_xml::limits::parse(&signature)
         .map_err(|e| Error::XmlParse(format!("generated signature template: {e}")))?;
     let sig_root = sig_doc
         .document_element()
@@ -556,6 +561,7 @@ pub fn sign_enveloped_document(
 /// preserving behavior while still avoiding the caller-visible serialize/parse
 /// round trip.
 pub fn sign_document(ctx: &DsigContext, doc: &mut Document<'_>) -> Result<(), Error> {
+    ribergshamra_xml::limits::validate_document(doc)?;
     let mut id_attrs: Vec<&str> = vec!["Id", "ID", "id", "AssertionID"];
     let extra: Vec<&str> = ctx.id_attrs.iter().map(|s| s.as_str()).collect();
     id_attrs.extend(extra);
@@ -609,6 +615,7 @@ pub fn sign_document(ctx: &DsigContext, doc: &mut Document<'_>) -> Result<(), Er
             .ok_or_else(|| Error::MissingAttribute("Algorithm on DigestMethod".into()))?
             .to_owned();
         let transforms_node = find_child_element(doc, reference, ns::DSIG, ns::node::TRANSFORMS);
+        crate::context::validate_reference_transforms(doc, transforms_node)?;
 
         let fast_digest = reference_node_set_for_fast(doc, &id_map, &uri)?
             .and_then(|node_set| {
@@ -754,7 +761,7 @@ fn compute_reference_digest_via_transform_pipeline(
     transforms_node: Option<NodeId>,
     digest_uri: &str,
 ) -> Result<Vec<u8>, Error> {
-    let current_xml = doc.to_xml();
+    let current_xml = ribergshamra_xml::limits::serialize_document(doc)?;
     let mut data = if uri.is_empty() {
         let ns = NodeSet::all_without_comments(doc);
         ribergshamra_transforms::TransformData::xml_borrowed(&current_xml, Some(ns))
@@ -776,8 +783,7 @@ fn compute_reference_digest_via_transform_pipeline(
         let mut resolved = None;
         for (map_url, file_path) in &ctx.url_maps {
             if url_map_matches(uri, map_url) {
-                let bytes = std::fs::read(file_path)
-                    .map_err(|e| Error::Other(format!("url-map {file_path}: {e}")))?;
+                let bytes = read_regular_external_file(std::path::Path::new(file_path))?;
                 resolved = Some(ribergshamra_transforms::TransformData::Binary(bytes));
                 break;
             }
@@ -902,9 +908,10 @@ fn escape_xml_attr(value: &str) -> String {
 
 /// Read local detached bytes for signing when `uri` is a safe relative path.
 ///
-/// This mirrors verifier local-file fallback so signing cannot accidentally
-/// digest a local file for a scheme URI such as `urn:payload`, nor use absolute
-/// paths or parent traversal that verification would later reject.
+/// This mirrors verifier file authorization: a caller must configure the base
+/// directory, and only bounded regular files inside it are accepted. Signing
+/// cannot digest a scheme URI as a local path or use absolute paths or parent
+/// traversal that verification would later reject.
 fn read_signing_relative_reference_uri(
     uri: &str,
     base_dir: Option<&str>,
@@ -913,14 +920,10 @@ fn read_signing_relative_reference_uri(
         return Ok(None);
     };
 
-    if let Some(base) = base_dir {
-        if let Some(data) = read_existing_relative_file(std::path::Path::new(base), path, uri)? {
-            return Ok(Some(data));
-        }
-    }
-
-    let cwd = std::env::current_dir().map_err(|e| Error::Other(format!("current dir: {e}")))?;
-    read_existing_relative_file(&cwd, path, uri)
+    let Some(base) = base_dir else {
+        return Ok(None);
+    };
+    read_existing_relative_file(std::path::Path::new(base), path, uri)
 }
 
 // Re-use helpers from verify module
@@ -973,25 +976,7 @@ fn find_child_elements(
 }
 
 fn build_id_map(doc: &Document<'_>, attr_names: &[&str]) -> Result<HashMap<String, NodeId>, Error> {
-    let mut map = HashMap::new();
-    for id in doc.descendants(doc.root()) {
-        if let Some(elem) = doc.element(id) {
-            for attr_name in attr_names {
-                if let Some(val) = elem.get_attribute(attr_name) {
-                    if map.insert(val.to_owned(), id).is_some() {
-                        return Err(Error::XmlStructure(format!("duplicate ID: {val}")));
-                    }
-                }
-            }
-            // Also check xml:id
-            if let Some(val) = elem.get_attribute_ns("http://www.w3.org/XML/1998/namespace", "id") {
-                if map.insert(val.to_owned(), id).is_some() {
-                    return Err(Error::XmlStructure(format!("duplicate ID: {val}")));
-                }
-            }
-        }
-    }
-    Ok(map)
+    ribergshamra_xml::document::build_id_map(doc, attr_names)
 }
 
 /// Resolve a reference URI into the node-set shape used by the signing fast path.
@@ -1261,7 +1246,7 @@ fn replace_first_empty_element_in_place(
     new_content: &str,
 ) -> bool {
     // Use uppsala to find the element's byte range for accurate replacement
-    let replacement = if let Ok(doc) = uppsala::parse(xml.as_str()) {
+    let replacement = if let Ok(doc) = ribergshamra_xml::limits::parse(xml.as_str()) {
         let mut replacement = None;
         for id in doc.descendants(doc.root()) {
             let elem = match doc.element(id) {
@@ -1340,7 +1325,7 @@ fn extract_open_tag(raw_xml: &str) -> String {
 /// 2. `<X509Data>` with empty child template elements like `<X509SubjectName/>`,
 ///    `<X509IssuerSerial/>`, `<X509SKI/>`, `<X509Certificate/>` — populates each
 fn populate_x509_data(xml: &str, x509_chain: &[Vec<u8>]) -> Result<String, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Find X509Data element in KeyInfo
     let x509_data_id = doc.descendants(doc.root()).into_iter().find(|&id| {
@@ -1537,8 +1522,8 @@ fn extract_x509_info(cert_der: &[u8]) -> X509Info {
         }
     };
 
-    let subject_name = Some(format_rdn_sequence(&cert.tbs_certificate.subject));
-    let issuer_name = Some(format_rdn_sequence(&cert.tbs_certificate.issuer));
+    let subject_name = format_rdn_sequence(&cert.tbs_certificate.subject).ok();
+    let issuer_name = format_rdn_sequence(&cert.tbs_certificate.issuer).ok();
     let serial_number = Some(format_serial(&cert.tbs_certificate.serial_number));
 
     // Extract SKI from extensions
@@ -1552,67 +1537,35 @@ fn extract_x509_info(cert_der: &[u8]) -> X509Info {
     }
 }
 
-/// Format an X.500 Name (RDN sequence) as a comma-separated string.
-/// Uses the RFC 2253 / xmlsec convention.
-fn format_rdn_sequence(name: &x509_cert::name::Name) -> String {
-    use der::oid::db::rfc4519;
-    use std::fmt::Write;
-
-    let mut parts = Vec::new();
-    for rdn in name.0.iter() {
-        for atv in rdn.0.iter() {
-            let oid = &atv.oid;
-            let prefix = if *oid == rfc4519::CN {
-                "CN"
-            } else if *oid == rfc4519::O {
-                "O"
-            } else if *oid == rfc4519::OU {
-                "OU"
-            } else if *oid == rfc4519::C {
-                "C"
-            } else if *oid == rfc4519::ST {
-                "ST"
-            } else if *oid == rfc4519::L {
-                "L"
-            } else if *oid == rfc4519::SERIAL_NUMBER {
-                "serialNumber"
+/// Format an X.500 Name using RFC4514 ordering, grouping and escaping.
+/// Unknown or unsupported value encodings retain their complete DER value.
+fn format_rdn_sequence(name: &x509_cert::name::Name) -> Result<String, Error> {
+    use der::{Encode, Tagged};
+    let mut rdns = Vec::with_capacity(name.0.len());
+    for rdn in name.0.iter().rev() {
+        let mut attributes = Vec::with_capacity(rdn.0.len());
+        for attribute in rdn.0.iter() {
+            let text = if matches!(
+                attribute.value.tag(),
+                der::Tag::Utf8String | der::Tag::PrintableString | der::Tag::Ia5String
+            ) {
+                attribute.to_string()
             } else {
-                // Use OID dot notation for unknown types
-                let mut s = String::new();
-                let _ = write!(s, "{oid}");
-                parts.push(s);
-                continue;
+                let value = attribute.value.to_der().map_err(|error| {
+                    Error::Certificate(format!("cannot encode distinguished-name value: {error}"))
+                })?;
+                let mut encoded = format!("{}=#", attribute.oid);
+                use std::fmt::Write;
+                for byte in value {
+                    let _ = write!(encoded, "{byte:02X}");
+                }
+                encoded
             };
-
-            // Decode the value - try UTF8String, then PrintableString, then raw bytes
-            let val = decode_atv_value(&atv.value);
-            parts.push(format!("{prefix}={val}"));
+            attributes.push(text);
         }
+        rdns.push(attributes.join("+"));
     }
-
-    // xmlsec outputs in reverse order (most specific first)
-    parts.reverse();
-    parts.join(",")
-}
-
-/// Decode an AttributeValue (ASN.1 Any) to a string.
-fn decode_atv_value(val: &der::Any) -> String {
-    use der::Decode;
-
-    // Try UTF8String
-    if let Ok(s) = der::asn1::Utf8StringRef::from_der(val.value()) {
-        return s.as_str().to_string();
-    }
-    // Try PrintableString
-    if let Ok(s) = der::asn1::PrintableStringRef::from_der(val.value()) {
-        return s.as_str().to_string();
-    }
-    // Try IA5String
-    if let Ok(s) = der::asn1::Ia5StringRef::from_der(val.value()) {
-        return s.as_str().to_string();
-    }
-    // Fall back to raw UTF-8 interpretation of the value bytes
-    String::from_utf8_lossy(val.value()).to_string()
+    Ok(rdns.join(","))
 }
 
 /// Format serial number as a decimal string.
@@ -1719,7 +1672,7 @@ fn populate_key_value(
     xml: &str,
     key_data: &ribergshamra_keys::key::KeyData,
 ) -> Result<String, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     let kv_id = doc.descendants(doc.root()).into_iter().find(|&id| {
         doc.element(id).is_some_and(|elem| {
@@ -1772,7 +1725,7 @@ fn populate_der_encoded_key_value(
     xml: &str,
     key_data: &ribergshamra_keys::key::KeyData,
 ) -> Result<String, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     let dek_id = doc.descendants(doc.root()).into_iter().find(|&id| {
         doc.element(id).is_some_and(|elem| {
@@ -1860,7 +1813,7 @@ fn encrypt_session_key_in_template(
         None => return Ok(xml.to_owned()),
     };
 
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Find EncryptedKey elements with empty CipherValue
     let mut replacements: Vec<(std::ops::Range<usize>, String)> = Vec::new();
@@ -1996,6 +1949,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn generated_issuer_names_preserve_email_values_rdn_groups_and_escaping() {
+        use der::Decode;
+        let cert = x509_cert::Certificate::from_der(include_bytes!(
+            "../../../test-data/keys/rsa/rsa-2048-cert.der"
+        ))
+        .unwrap();
+        let rendered = format_rdn_sequence(&cert.tbs_certificate.issuer).unwrap();
+        let parsed: x509_cert::name::Name = rendered.parse().unwrap();
+        let email = der::oid::ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.1");
+        let value = |name: &x509_cert::name::Name| {
+            name.0
+                .iter()
+                .flat_map(|rdn| rdn.0.iter())
+                .find(|attribute| attribute.oid == email)
+                .unwrap()
+                .value
+                .value()
+                .to_vec()
+        };
+        assert_eq!(value(&parsed), value(&cert.tbs_certificate.issuer));
+        let grouped: x509_cert::name::Name = "CN=comma\\,plus\\++OU=group,C=US".parse().unwrap();
+        let rendered = format_rdn_sequence(&grouped).unwrap();
+        assert_eq!(rendered.parse::<x509_cert::name::Name>().unwrap(), grouped);
+        let encoded: x509_cert::name::Name = "CN=#1405616c706861".parse().unwrap();
+        assert_eq!(
+            format_rdn_sequence(&encoded)
+                .unwrap()
+                .parse::<x509_cert::name::Name>()
+                .unwrap(),
+            encoded
+        );
+    }
+
+    #[test]
     fn reference_digest_sink_preserves_mixed_write_order() {
         use ribergshamra_c14n::C14nSink;
 
@@ -2031,12 +2018,16 @@ mod tests {
     impl TestDir {
         /// Create a unique temporary directory.
         fn new() -> Self {
+            Self::new_in(&std::env::temp_dir())
+        }
+
+        fn new_in(parent: &std::path::Path) -> Self {
             let base_nonce = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system clock must be after unix epoch")
                 .as_nanos();
             for attempt in 0..100_u32 {
-                let path = std::env::temp_dir().join(format!(
+                let path = parent.join(format!(
                     "ribergshamra-dsig-sign-reference-{pid}-{base_nonce}-{attempt}",
                     pid = std::process::id()
                 ));
@@ -2168,6 +2159,63 @@ mod tests {
             !signed.contains("<ds:SignatureValue></ds:SignatureValue>"),
             "signing must fill the HMAC signature value"
         );
+    }
+
+    #[test]
+    fn signing_without_file_authorization_never_reads_current_directory() {
+        let cwd = std::env::current_dir().unwrap();
+        let cwd_fixture = TestDir::new_in(&cwd);
+        std::fs::write(cwd_fixture.join("payload.txt"), b"unapproved payload").unwrap();
+        let uri = format!(
+            "{}/payload.txt",
+            cwd_fixture.path.file_name().unwrap().to_str().unwrap()
+        );
+        let empty_base = TestDir::new();
+        let template = detached_reference_template(&uri);
+
+        for ctx in [
+            hmac_signing_context(),
+            hmac_signing_context().with_base_dir(empty_base.as_str()),
+        ] {
+            let mut doc = uppsala::parse(&template).unwrap();
+            for result in [
+                sign_owned(&ctx, template.clone()).map(|_| ()),
+                sign_document(&ctx, &mut doc),
+            ] {
+                assert!(matches!(result, Err(Error::InvalidUri(_))));
+            }
+        }
+    }
+
+    #[test]
+    fn signing_with_authorized_base_reads_regular_detached_file() {
+        let base = TestDir::new();
+        std::fs::write(base.join("payload.txt"), b"approved payload").unwrap();
+        let ctx = hmac_signing_context().with_base_dir(base.as_str());
+        let template = detached_reference_template("payload.txt");
+        let mut doc = uppsala::parse(&template).unwrap();
+
+        assert!(sign_owned(&ctx, template.clone()).is_ok());
+        assert!(sign_document(&ctx, &mut doc).is_ok());
+    }
+
+    #[test]
+    fn signing_rejects_non_regular_mapped_file() {
+        let directory = TestDir::new();
+        let mut ctx = hmac_signing_context();
+        ctx.add_url_map("urn:directory", directory.as_str());
+        let template = detached_reference_template("urn:directory");
+        let mut doc = uppsala::parse(&template).unwrap();
+
+        for result in [
+            sign_owned(&ctx, template.clone()).map(|_| ()),
+            sign_document(&ctx, &mut doc),
+        ] {
+            assert!(matches!(
+                result,
+                Err(Error::InvalidUri(message)) if message.contains("must be a regular file")
+            ));
+        }
     }
 
     #[test]

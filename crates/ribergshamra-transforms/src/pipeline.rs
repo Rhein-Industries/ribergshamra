@@ -6,6 +6,25 @@ use ribergshamra_core::Error;
 use ribergshamra_xml::NodeSet;
 use std::borrow::Cow;
 
+/// Default maximum number of transforms executed for one input.
+///
+/// This bounds the length of a transform chain. Individual transform work and
+/// output size still depend on the transform implementation and input data.
+pub const DEFAULT_MAX_TRANSFORMS: usize = 32;
+
+/// Reject a transform chain whose length exceeds the selected limit.
+///
+/// A zero limit permits only an empty chain. XML signature and encryption
+/// callers use this helper before applying document-selected transforms.
+pub fn validate_transform_count(count: usize, limit: usize) -> Result<(), Error> {
+    if count > limit {
+        return Err(Error::Transform(format!(
+            "transform count {count} exceeds limit {limit}"
+        )));
+    }
+    Ok(())
+}
+
 /// Data flowing through the transform pipeline.
 ///
 /// XML Signature transforms operate either on an XML node-set or on an octet
@@ -110,12 +129,31 @@ impl TransformPipeline {
 
     /// Execute all transforms in order.
     ///
+    /// Rejects chains longer than [`DEFAULT_MAX_TRANSFORMS`] before executing
+    /// any transform. Trusted callers needing another chain length can use
+    /// [`Self::execute_with_limit`].
+    ///
     /// Borrowed XML input remains borrowed across the pipeline until a transform
     /// converts it to binary or creates a new owned XML buffer.
     pub fn execute<'a>(&self, input: TransformData<'a>) -> Result<TransformData<'a>, Error> {
+        self.execute_with_limit(input, DEFAULT_MAX_TRANSFORMS)
+    }
+
+    /// Execute the pipeline after checking its length against `max_transforms`.
+    ///
+    /// The check happens before any transform runs. This count limit does not
+    /// bound the work or output size of an individual transform.
+    pub fn execute_with_limit<'a>(
+        &self,
+        input: TransformData<'a>,
+        max_transforms: usize,
+    ) -> Result<TransformData<'a>, Error> {
+        validate_transform_count(self.transforms.len(), max_transforms)?;
         let mut data = input;
+        validate_data_size(&data)?;
         for transform in &self.transforms {
             data = transform.execute(data)?;
+            validate_data_size(&data)?;
         }
         Ok(data)
     }
@@ -129,6 +167,14 @@ impl TransformPipeline {
     pub fn is_empty(&self) -> bool {
         self.transforms.is_empty()
     }
+}
+
+fn validate_data_size(data: &TransformData<'_>) -> Result<(), Error> {
+    let size = match data {
+        TransformData::Xml { xml_text, .. } => xml_text.len(),
+        TransformData::Binary(bytes) => bytes.len(),
+    };
+    ribergshamra_xml::limits::validate_output_size(size)
 }
 
 impl Default for TransformPipeline {
@@ -187,5 +233,74 @@ impl Transform for C14nTransform {
                 Ok(TransformData::Binary(bytes))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    struct CountingTransform(Arc<AtomicUsize>);
+
+    impl Transform for CountingTransform {
+        fn uri(&self) -> &str {
+            "urn:synthetic:counting-transform"
+        }
+
+        fn execute<'a>(&self, input: TransformData<'a>) -> Result<TransformData<'a>, Error> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(input)
+        }
+    }
+
+    fn counting_pipeline(count: usize) -> (TransformPipeline, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let mut pipeline = TransformPipeline::new();
+        for _ in 0..count {
+            pipeline.push(Box::new(CountingTransform(Arc::clone(&calls))));
+        }
+        (pipeline, calls)
+    }
+
+    #[test]
+    fn pipeline_accepts_default_limit_and_preserves_data() {
+        let (pipeline, calls) = counting_pipeline(DEFAULT_MAX_TRANSFORMS);
+        let output = pipeline
+            .execute(TransformData::Binary(b"synthetic input".to_vec()))
+            .expect("boundary count is allowed");
+        assert_eq!(calls.load(Ordering::Relaxed), DEFAULT_MAX_TRANSFORMS);
+        assert_eq!(output.to_binary().unwrap(), b"synthetic input");
+    }
+
+    #[test]
+    fn pipeline_rejects_excess_count_before_any_transform_runs() {
+        let (pipeline, calls) = counting_pipeline(DEFAULT_MAX_TRANSFORMS + 1);
+        let result = pipeline.execute(TransformData::Binary(Vec::new()));
+        assert!(matches!(result, Err(Error::Transform(_))));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn trusted_pipeline_can_select_an_explicit_larger_limit() {
+        let count = DEFAULT_MAX_TRANSFORMS + 1;
+        let (pipeline, calls) = counting_pipeline(count);
+        let output = pipeline
+            .execute_with_limit(TransformData::Binary(b"synthetic input".to_vec()), count)
+            .expect("explicit limit is allowed");
+        assert_eq!(calls.load(Ordering::Relaxed), count);
+        assert_eq!(output.to_binary().unwrap(), b"synthetic input");
+    }
+
+    #[test]
+    fn zero_transform_limit_permits_only_an_empty_chain() {
+        assert!(validate_transform_count(0, 0).is_ok());
+        assert!(matches!(
+            validate_transform_count(1, 0),
+            Err(Error::Transform(_))
+        ));
     }
 }

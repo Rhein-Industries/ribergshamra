@@ -39,6 +39,7 @@ ribergshamra-pkcs12 = { version = "0.10.0", path = "crates/ribergshamra-pkcs12",
 
 # XML parsing
 uppsala = "0.10"
+quick-xml = "=0.41.0"
 
 # Cryptography (RustCrypto ecosystem)
 sha1 = { version = "0.10", features = ["oid"] }

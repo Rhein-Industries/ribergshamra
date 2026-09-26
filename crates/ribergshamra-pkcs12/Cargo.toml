@@ -18,6 +18,10 @@ aws-lc = ["riptering/aws-lc"]
 fips = ["aws-lc", "riptering/fips"]
 legacy-algorithms = ["riptering/legacy"]
 
+# Explicit compatibility opt-in to unpatched RustCrypto RSA decryption.
+# Independent of legacy-algorithms and never enabled by default.
+legacy-rsa-decryption = ["riptering/legacy-rsa-decryption"]
+
 [dependencies]
 ribergshamra-core.workspace = true
 riptering.workspace = true

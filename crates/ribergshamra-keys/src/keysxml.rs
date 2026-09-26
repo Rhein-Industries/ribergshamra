@@ -22,7 +22,8 @@ const DSIG_NS: &str = "http://www.w3.org/2000/09/xmldsig#";
 
 /// Parse an xmlsec `keys.xml` file and return all named keys.
 pub fn parse_keys_xml(xml: &str) -> Result<Vec<Key>, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(format!("keys.xml: {e}")))?;
+    let doc = ribergshamra_xml::limits::parse(xml)
+        .map_err(|e| Error::XmlParse(format!("keys.xml: {e}")))?;
 
     let mut keys = Vec::new();
 
@@ -88,19 +89,19 @@ fn parse_key_info_entry(key_info_node: NodeId, doc: &Document<'_>) -> Result<Opt
 
         let mut key = match (child_ns, child_local) {
             (ALEKSEY_NS, "HMACKeyValue") => {
-                let b64 = doc.text_content_deep(child);
+                let b64 = zeroize::Zeroizing::new(doc.text_content_deep(child));
                 let b64 = b64.trim();
                 let bytes = decode_b64(b64, "HMACKeyValue")?;
                 loader::load_hmac_key(&bytes)?
             }
             (ALEKSEY_NS, "AESKeyValue") => {
-                let b64 = doc.text_content_deep(child);
+                let b64 = zeroize::Zeroizing::new(doc.text_content_deep(child));
                 let b64 = b64.trim();
                 let bytes = decode_b64(b64, "AESKeyValue")?;
                 loader::load_aes_key(&bytes)?
             }
             (ALEKSEY_NS, "DESKeyValue") => {
-                let b64 = doc.text_content_deep(child);
+                let b64 = zeroize::Zeroizing::new(doc.text_content_deep(child));
                 let b64 = b64.trim();
                 let bytes = decode_b64(b64, "DESKeyValue")?;
                 loader::load_des3_key(&bytes)?
@@ -121,18 +122,26 @@ fn parse_key_info_entry(key_info_node: NodeId, doc: &Document<'_>) -> Result<Opt
     Ok(None)
 }
 
-fn decode_b64(b64: &str, context: &str) -> Result<Vec<u8>, Error> {
+fn decode_b64(b64: &str, context: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, Error> {
     use base64::Engine;
-    let clean: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
+    let clean = zeroize::Zeroizing::new(
+        b64.chars()
+            .filter(|c| !c.is_whitespace())
+            .collect::<String>(),
+    );
+    let mut decoded = zeroize::Zeroizing::new(Vec::new());
     base64::engine::general_purpose::STANDARD
-        .decode(&clean)
-        .map_err(|e| Error::Base64(format!("{context}: {e}")))
+        .decode_vec(clean.as_bytes(), &mut decoded)
+        .map_err(|e| Error::Base64(format!("{context}: {e}")))?;
+    Ok(decoded)
 }
 
 /// Load keys from an xmlsec keys.xml file path into a list of named keys.
 pub fn load_keys_file(path: &std::path::Path) -> Result<Vec<Key>, Error> {
-    let xml = std::fs::read_to_string(path)
-        .map_err(|e| Error::Other(format!("{}: {e}", path.display())))?;
+    let xml = zeroize::Zeroizing::new(
+        std::fs::read_to_string(path)
+            .map_err(|e| Error::Other(format!("{}: {e}", path.display())))?,
+    );
     parse_keys_xml(&xml)
 }
 

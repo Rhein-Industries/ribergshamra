@@ -14,27 +14,36 @@ use crate::context::EncContext;
 use ribergshamra_core::{algorithm, ns, Error};
 use std::collections::HashMap;
 use uppsala::{Document, NodeId};
+use zeroize::Zeroizing;
 
 /// Decrypt an XML document containing `<EncryptedData>`.
 ///
 /// Returns the decrypted XML document as a string.
 pub fn decrypt(ctx: &EncContext, xml: &str) -> Result<String, Error> {
     let bytes = decrypt_to_bytes(ctx, xml)?;
-    String::from_utf8(bytes)
-        .map_err(|e| Error::Decryption(format!("plaintext is not valid UTF-8: {e}")))
+    match String::from_utf8(bytes) {
+        Ok(text) => Ok(text),
+        Err(error) => {
+            let message = error.utf8_error();
+            let _bytes = Zeroizing::new(error.into_bytes());
+            Err(Error::Decryption(format!(
+                "plaintext is not valid UTF-8: {message}"
+            )))
+        }
+    }
 }
 
 /// Decrypt an XML document containing `<EncryptedData>`.
 ///
 /// Returns the raw decrypted bytes, supporting non-UTF-8 content.
 pub fn decrypt_to_bytes(ctx: &EncContext, xml: &str) -> Result<Vec<u8>, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Build ID map
     let mut id_attrs: Vec<&str> = vec!["Id", "ID", "id", "AssertionID"];
     let extra: Vec<&str> = ctx.id_attrs.iter().map(|s| s.as_str()).collect();
     id_attrs.extend(extra);
-    let id_map = build_id_map(&doc, &id_attrs);
+    let id_map = ribergshamra_xml::document::build_id_map(&doc, &id_attrs)?;
 
     // Find first <EncryptedData> element
     let enc_data_id = find_element(&doc, ns::ENC, ns::node::ENCRYPTED_DATA)
@@ -57,7 +66,13 @@ pub fn decrypt_to_bytes(ctx: &EncContext, xml: &str) -> Result<Vec<u8>, Error> {
         .ok_or_else(|| Error::MissingAttribute("Algorithm on EncryptionMethod".into()))?;
 
     // Resolve decryption key
-    let key_bytes = resolve_decryption_key(ctx, &doc, enc_data_id, &id_map, enc_uri)?;
+    let key_bytes = Zeroizing::new(resolve_decryption_key(
+        ctx,
+        &doc,
+        enc_data_id,
+        &id_map,
+        enc_uri,
+    )?);
 
     // Read CipherData/CipherValue
     let cipher_data_id = find_child_element(&doc, enc_data_id, ns::ENC, ns::node::CIPHER_DATA)
@@ -77,10 +92,16 @@ pub fn decrypt_to_bytes(ctx: &EncContext, xml: &str) -> Result<Vec<u8>, Error> {
 
     // Decrypt
     let cipher_alg = ribergshamra_crypto::cipher::from_uri(enc_uri)?;
-    let plaintext = cipher_alg.decrypt(effective_key, &cipher_bytes)?;
+    let plaintext = Zeroizing::new(cipher_alg.decrypt(effective_key, &cipher_bytes)?);
 
     // Replace EncryptedData with plaintext
-    let result = replace_encrypted_data_bytes(xml, &doc, enc_data_id, enc_type, &plaintext)?;
+    let result = Zeroizing::new(replace_encrypted_data_bytes(
+        xml,
+        &doc,
+        enc_data_id,
+        enc_type,
+        &plaintext,
+    )?);
 
     // If the document declares a non-UTF-8 encoding (e.g., ISO-8859-1),
     // convert the UTF-8 output to that encoding. The decrypted content from
@@ -98,7 +119,7 @@ fn maybe_convert_encoding(data: &[u8]) -> Vec<u8> {
         Ok(s) => s,
         Err(_) => return data.to_vec(),
     };
-    let header_lower = header_str.to_lowercase();
+    let header_lower = Zeroizing::new(header_str.to_lowercase());
     if !header_lower.contains("encoding=\"iso-8859-1\"")
         && !header_lower.contains("encoding='iso-8859-1'")
     {
@@ -277,7 +298,7 @@ fn decrypt_encrypted_key(
                     .map_err(map_riptering_err)
             } else {
                 // Software path
-                let oaep_params = read_oaep_params(doc, enc_method_id);
+                let oaep_params = read_oaep_params(doc, enc_method_id)?;
                 let transport =
                     ribergshamra_crypto::keytransport::from_uri_with_params(enc_uri, oaep_params)?;
                 // Prefer RSA private key; fall back to first RSA key
@@ -316,6 +337,7 @@ fn decrypt_encrypted_key(
                 if let Some(kek) =
                     resolve_agreement_method_kek(ctx, doc, enc_key_id, expected_kek_size)?
                 {
+                    let kek = Zeroizing::new(kek);
                     return kw.unwrap(&kek, &cipher_bytes);
                 }
                 // Fall back to named/static AES key
@@ -354,7 +376,7 @@ fn decrypt_encrypted_key(
         | algorithm::AES256_GCM
         | algorithm::TRIPLEDES_CBC => {
             let cipher = ribergshamra_crypto::cipher::from_uri(enc_uri)?;
-            let kek_bytes = resolve_encrypted_key_kek(ctx, doc, enc_key_id)?;
+            let kek_bytes = Zeroizing::new(resolve_encrypted_key_kek(ctx, doc, enc_key_id)?);
             cipher.decrypt(&kek_bytes, &cipher_bytes)
         }
 
@@ -424,7 +446,7 @@ fn resolve_agreement_method_kek(
             .ok_or_else(|| Error::MissingElement("OriginatorKeyInfo".into()))?;
 
     // Compute shared secret based on agreement algorithm
-    let shared_secret = match agreement_alg {
+    let shared_secret = Zeroizing::new(match agreement_alg {
         algorithm::ECDH_ES => {
             let originator_public_bytes = extract_ec_public_key_bytes(doc, originator_ki_id)?;
             let recipient_key = resolve_recipient_key(ctx, doc, agreement_id)?;
@@ -480,7 +502,7 @@ fn resolve_agreement_method_kek(
                 "key agreement: {agreement_alg}"
             )));
         }
-    };
+    });
 
     // Apply KDF to derive KEK
     let kdf_method_id = find_child_element(
@@ -703,7 +725,7 @@ pub(crate) fn resolve_derived_key(
             .unwrap_or_default();
 
     // Look up master key in keys manager
-    let master_key_bytes = if !master_key_name.is_empty() {
+    let master_key_bytes = Zeroizing::new(if !master_key_name.is_empty() {
         if let Some(key) = ctx.keys_manager.find_by_name(&master_key_name) {
             key.symmetric_key_bytes()
                 .map(|b| b.to_vec())
@@ -725,7 +747,7 @@ pub(crate) fn resolve_derived_key(
         key.symmetric_key_bytes()
             .map(|b| b.to_vec())
             .ok_or_else(|| Error::Key("no master key for DerivedKey".into()))?
-    };
+    });
 
     // Parse KeyDerivationMethod
     let kd_method_id = find_child_element(
@@ -865,10 +887,16 @@ pub(crate) fn parse_pbkdf2_params(
         ns::node::PBKDF2_KEY_LENGTH,
     ) {
         let kl_text = doc.text_content_deep(kl_id);
-        kl_text.trim().parse::<usize>().unwrap_or(default_key_len)
+        kl_text
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| Error::XmlStructure("invalid PBKDF2 KeyLength".into()))?
     } else {
         default_key_len
     };
+    // Every supported document cipher/KEK uses at most 32 bytes. Bounding
+    // output blocks is necessary in addition to the iteration cap.
+    validate_derived_key_length(key_length, "PBKDF2")?;
 
     // PRF (pseudo-random function)
     let prf_id = find_child_element(doc, pbkdf2_params_id, ns::ENC11, ns::node::PBKDF2_PRF)
@@ -902,6 +930,15 @@ fn validate_pbkdf2_iteration_count(iteration_count: u32, max_iterations: u32) ->
     Ok(())
 }
 
+fn validate_derived_key_length(key_length: usize, algorithm: &str) -> Result<(), Error> {
+    if !(1..=32).contains(&key_length) {
+        return Err(Error::XmlStructure(format!(
+            "{algorithm} KeyLength must be between 1 and 32 bytes"
+        )));
+    }
+    Ok(())
+}
+
 /// Parse HKDF parameters from a KeyDerivationMethod element.
 ///
 /// HKDFParams is in the `http://www.w3.org/2001/04/xmldsig-more#` namespace.
@@ -928,47 +965,33 @@ pub(crate) fn parse_hkdf_params(
     // PRF (pseudo-random function) — default is HMAC-SHA256
     let prf_uri = find_child_element(doc, hkdf_params_id, ns::DSIG_MORE, ns::node::HKDF_PRF)
         .or_else(|| find_child_element_any_ns(doc, hkdf_params_id, ns::node::HKDF_PRF))
-        .and_then(|prf_id| {
+        .map(|prf_id| {
             doc.element(prf_id)
                 .unwrap()
                 .get_attribute(ns::attr::ALGORITHM)
                 .map(|s| s.to_owned())
+                .ok_or_else(|| Error::MissingAttribute("Algorithm on HKDF PRF".into()))
         })
+        .transpose()?
         .unwrap_or_else(|| algorithm::HMAC_SHA256.to_owned());
 
     // Salt (optional)
     let salt = find_child_element(doc, hkdf_params_id, ns::DSIG_MORE, ns::node::HKDF_SALT)
         .or_else(|| find_child_element_any_ns(doc, hkdf_params_id, ns::node::HKDF_SALT))
-        .and_then(|salt_id| {
+        .map(|salt_id| {
             find_child_element(doc, salt_id, ns::DSIG_MORE, ns::node::HKDF_SALT_SPECIFIED)
                 .or_else(|| find_child_element_any_ns(doc, salt_id, ns::node::HKDF_SALT_SPECIFIED))
+                .ok_or_else(|| Error::MissingElement("Specified in HKDF Salt".into()))
         })
-        .and_then(|specified_id| {
-            let b64 = doc.text_content_deep(specified_id);
-            let b64 = b64.trim();
-            if b64.is_empty() {
-                return None;
-            }
-            use base64::Engine;
-            let engine = base64::engine::general_purpose::STANDARD;
-            let clean: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
-            engine.decode(&clean).ok()
-        });
+        .transpose()?
+        .map(|specified_id| decode_kdf_base64(doc, specified_id, "HKDF salt"))
+        .transpose()?;
 
     // Info (optional)
     let info = find_child_element(doc, hkdf_params_id, ns::DSIG_MORE, ns::node::HKDF_INFO)
         .or_else(|| find_child_element_any_ns(doc, hkdf_params_id, ns::node::HKDF_INFO))
-        .and_then(|info_id| {
-            let b64 = doc.text_content_deep(info_id);
-            let b64 = b64.trim();
-            if b64.is_empty() {
-                return None;
-            }
-            use base64::Engine;
-            let engine = base64::engine::general_purpose::STANDARD;
-            let clean: String = b64.chars().filter(|c| !c.is_whitespace()).collect();
-            engine.decode(&clean).ok()
-        });
+        .map(|info_id| decode_kdf_base64(doc, info_id, "HKDF info"))
+        .transpose()?;
 
     // KeyLength (in bits, optional — default to kek_len * 8)
     let key_length_bits = find_child_element(
@@ -978,11 +1001,20 @@ pub(crate) fn parse_hkdf_params(
         ns::node::HKDF_KEY_LENGTH,
     )
     .or_else(|| find_child_element_any_ns(doc, hkdf_params_id, ns::node::HKDF_KEY_LENGTH))
-    .and_then(|kl_id| {
+    .map(|kl_id| {
         let text = doc.text_content_deep(kl_id);
-        text.trim().parse::<u32>().ok()
+        text.trim()
+            .parse::<u32>()
+            .map_err(|_| Error::XmlStructure("invalid HKDF KeyLength".into()))
     })
+    .transpose()?
     .unwrap_or((default_key_len * 8) as u32);
+    if key_length_bits == 0 || key_length_bits % 8 != 0 {
+        return Err(Error::XmlStructure(
+            "HKDF KeyLength must be a positive multiple of 8 bits".into(),
+        ));
+    }
+    validate_derived_key_length((key_length_bits / 8) as usize, "HKDF")?;
 
     Ok(ribergshamra_crypto::kdf::HkdfParams {
         prf_uri: Some(prf_uri),
@@ -990,6 +1022,15 @@ pub(crate) fn parse_hkdf_params(
         info,
         key_length_bits,
     })
+}
+
+fn decode_kdf_base64(doc: &Document<'_>, node_id: NodeId, field: &str) -> Result<Vec<u8>, Error> {
+    use base64::Engine;
+    let text = doc.text_content_deep(node_id);
+    let clean: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+    base64::engine::general_purpose::STANDARD
+        .decode(&clean)
+        .map_err(|error| Error::Base64(format!("{field}: {error}")))
 }
 
 /// Decode a hex string.
@@ -1023,10 +1064,10 @@ fn hex_decode_strip_pad(s: &str) -> Result<Vec<u8>, Error> {
 }
 
 /// Read RSA-OAEP parameters from EncryptionMethod child elements.
-fn read_oaep_params(
+pub(crate) fn read_oaep_params(
     doc: &Document<'_>,
     enc_method_id: NodeId,
-) -> ribergshamra_crypto::keytransport::OaepParams {
+) -> Result<ribergshamra_crypto::keytransport::OaepParams, Error> {
     let mut params = ribergshamra_crypto::keytransport::OaepParams::default();
 
     for child_id in doc.children(enc_method_id) {
@@ -1039,31 +1080,25 @@ fn read_oaep_params(
 
         // DigestMethod (in dsig namespace)
         if local == ns::node::DIGEST_METHOD && (child_ns == ns::DSIG || child_ns == ns::ENC) {
-            if let Some(alg) = elem.get_attribute(ns::attr::ALGORITHM) {
-                params.digest_uri = Some(alg.to_owned());
-            }
+            let alg = elem
+                .get_attribute(ns::attr::ALGORITHM)
+                .ok_or_else(|| Error::MissingAttribute("Algorithm on OAEP DigestMethod".into()))?;
+            params.digest_uri = Some(alg.to_owned());
         }
         // MGF (in xmlenc11 namespace)
         if local == ns::node::RSA_MGF && (child_ns == ns::ENC11 || child_ns == ns::ENC) {
-            if let Some(alg) = elem.get_attribute(ns::attr::ALGORITHM) {
-                params.mgf_uri = Some(alg.to_owned());
-            }
+            let alg = elem
+                .get_attribute(ns::attr::ALGORITHM)
+                .ok_or_else(|| Error::MissingAttribute("Algorithm on OAEP MGF".into()))?;
+            params.mgf_uri = Some(alg.to_owned());
         }
         // OAEPparams (in xmlenc namespace)
         if local == ns::node::RSA_OAEP_PARAMS {
-            let text = doc.text_content_deep(child_id);
-            let clean: String = text.trim().chars().filter(|c| !c.is_whitespace()).collect();
-            if !clean.is_empty() {
-                use base64::Engine;
-                let engine = base64::engine::general_purpose::STANDARD;
-                if let Ok(bytes) = engine.decode(&clean) {
-                    params.oaep_params = Some(bytes);
-                }
-            }
+            params.oaep_params = Some(decode_kdf_base64(doc, child_id, "OAEPparams")?);
         }
     }
 
-    params
+    Ok(params)
 }
 
 /// Read CipherData -- extract CipherValue (Base64) or CipherReference.
@@ -1117,6 +1152,22 @@ fn resolve_cipher_reference(
         .get_attribute(ns::attr::URI)
         .ok_or_else(|| Error::MissingAttribute("URI on CipherReference".into()))?;
 
+    let transforms_id = find_child_element(doc, cipher_ref_id, ns::ENC, ns::node::TRANSFORMS)
+        .or_else(|| find_child_element(doc, cipher_ref_id, ns::DSIG, ns::node::TRANSFORMS));
+    if let Some(transforms_id) = transforms_id {
+        let count = doc
+            .children_iter(transforms_id)
+            .filter(|id| {
+                doc.element(*id)
+                    .is_some_and(|element| &*element.name.local_name == ns::node::TRANSFORM)
+            })
+            .count();
+        ribergshamra_transforms::pipeline::validate_transform_count(
+            count,
+            ribergshamra_transforms::pipeline::DEFAULT_MAX_TRANSFORMS,
+        )?;
+    }
+
     // Resolve same-document URI reference
     let data = if uri.is_empty() {
         // URI="" means the whole document -- transforms will select specific content
@@ -1148,9 +1199,6 @@ fn resolve_cipher_reference(
     };
 
     // Apply transforms if present
-    let transforms_id = find_child_element(doc, cipher_ref_id, ns::ENC, ns::node::TRANSFORMS)
-        .or_else(|| find_child_element(doc, cipher_ref_id, ns::DSIG, ns::node::TRANSFORMS));
-
     let mut result = data;
     if let Some(transforms_id) = transforms_id {
         for child_id in doc.children(transforms_id) {
@@ -1370,15 +1418,15 @@ fn replace_encrypted_data_bytes(
     let plaintext_is_xml = plaintext_trimmed.starts_with('<');
     let plaintext_has_decl = plaintext_trimmed.starts_with("<?xml");
 
-    let output_bytes = if plaintext_is_xml {
+    let mut output_bytes = Zeroizing::new(if plaintext_is_xml {
         // Normalize XML line endings per XML spec section 2.11:
         // CRLF -> LF, standalone CR -> LF
-        let normalized = normalize_line_endings(plaintext);
-        let normalized = normalize_empty_elements(&normalized);
+        let normalized = Zeroizing::new(normalize_line_endings(plaintext));
+        let normalized = Zeroizing::new(normalize_empty_elements(&normalized));
         normalize_self_closing_space(&normalized)
     } else {
         plaintext.to_vec()
-    };
+    });
 
     // Check if EncryptedData is the root element
     let before = xml[..start].trim();
@@ -1401,19 +1449,18 @@ fn replace_encrypted_data_bytes(
             }
             return Ok(result);
         }
-        return Ok(output_bytes);
+        return Ok(std::mem::take(&mut *output_bytes));
     }
 
-    let mut result = Vec::with_capacity(xml.len());
+    let mut result = Zeroizing::new(Vec::with_capacity(xml.len()));
     result.extend_from_slice(&xml.as_bytes()[..start]);
     result.extend_from_slice(&output_bytes);
     result.extend_from_slice(&xml.as_bytes()[end..]);
 
     // Normalize the surrounding document: the encrypted XML may have " />"
     // where the original had "/>" and "<tag></tag>" where the original had "<tag/>".
-    result = normalize_empty_elements(&result);
-    result = normalize_self_closing_space(&result);
-    Ok(result)
+    let normalized = Zeroizing::new(normalize_empty_elements(&result));
+    Ok(normalize_self_closing_space(&normalized))
 }
 
 /// Normalize XML line endings per XML spec section 2.11.
@@ -1646,20 +1693,6 @@ fn find_child_element_any_ns(
     None
 }
 
-fn build_id_map(doc: &Document<'_>, attr_names: &[&str]) -> HashMap<String, NodeId> {
-    let mut map = HashMap::new();
-    for node_id in doc.descendants(doc.root()) {
-        if let Some(elem) = doc.element(node_id) {
-            for attr_name in attr_names {
-                if let Some(val) = elem.get_attribute(attr_name) {
-                    map.insert(val.to_owned(), node_id);
-                }
-            }
-        }
-    }
-    map
-}
-
 /// Convert a `riptering::Error` to a `ribergshamra_core::Error`.
 fn map_riptering_err(e: riptering::Error) -> Error {
     match e {
@@ -1677,6 +1710,153 @@ fn map_riptering_err(e: riptering::Error) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cipher_reference_transform_limit_is_checked_before_execution() {
+        let limit = ribergshamra_transforms::pipeline::DEFAULT_MAX_TRANSFORMS;
+        let fixture = |count| {
+            format!(
+                r##"<root xmlns:xenc="http://www.w3.org/2001/04/xmlenc#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><payload Id="payload"/><xenc:CipherReference URI="#payload"><xenc:Transforms>{}</xenc:Transforms></xenc:CipherReference></root>"##,
+                format!(r#"<ds:Transform Algorithm="{}"/>"#, algorithm::BASE64).repeat(count)
+            )
+        };
+        let xml = fixture(limit);
+        let doc = uppsala::parse(&xml).unwrap();
+        let ids = ribergshamra_xml::document::build_id_map(&doc, &["Id"]).unwrap();
+        let reference = find_element(&doc, ns::ENC, ns::node::CIPHER_REFERENCE).unwrap();
+        assert!(resolve_cipher_reference(&doc, reference, &ids)
+            .unwrap()
+            .is_empty());
+
+        // A different first transform would fail if execution began. The
+        // count error must be returned before executing that transform.
+        let xml =
+            fixture(limit + 1).replacen(algorithm::BASE64, "urn:synthetic:unknown-transform", 1);
+        let doc = uppsala::parse(&xml).unwrap();
+        let ids = ribergshamra_xml::document::build_id_map(&doc, &["Id"]).unwrap();
+        let reference = find_element(&doc, ns::ENC, ns::node::CIPHER_REFERENCE).unwrap();
+        let error = resolve_cipher_reference(&doc, reference, &ids).unwrap_err();
+        assert!(matches!(error, Error::Transform(_)));
+        assert!(error.to_string().contains("exceeds limit"));
+    }
+
+    #[test]
+    fn duplicate_ids_are_rejected_before_encryption_or_key_resolution() {
+        let ctx = EncContext::new(ribergshamra_keys::KeysManager::new());
+        for xml in [
+            r#"<root><a Id="same"/><b ID="same"/></root>"#,
+            r#"<root><a xml:id="same"/><b Id="same"/></root>"#,
+        ] {
+            let error = decrypt_to_bytes(&ctx, xml).unwrap_err();
+            assert!(matches!(error, Error::XmlStructure(_)));
+            let error = crate::encrypt::encrypt(&ctx, xml, b"synthetic").unwrap_err();
+            assert!(matches!(error, Error::XmlStructure(_)));
+        }
+    }
+
+    #[test]
+    fn pbkdf2_key_lengths_are_bounded_before_derivation() {
+        for length in ["0", "33", "invalid", "18446744073709551615"] {
+            let xml = derived_key_xml_for_pbkdf2_iteration("1").replace(
+                "<xenc11:KeyLength>16</xenc11:KeyLength>",
+                &format!("<xenc11:KeyLength>{length}</xenc11:KeyLength>"),
+            );
+            let doc = uppsala::parse(&xml).unwrap();
+            let method = find_child_element(
+                &doc,
+                doc.document_element().unwrap(),
+                ns::ENC11,
+                ns::node::KEY_DERIVATION_METHOD,
+            )
+            .unwrap();
+            assert!(matches!(
+                parse_pbkdf2_params(&doc, method, 32, 100),
+                Err(Error::XmlStructure(_))
+            ));
+        }
+        assert!(validate_derived_key_length(32, "PBKDF2").is_ok());
+    }
+
+    #[test]
+    fn hkdf_rejects_invalid_parameters_and_preserves_empty_values() {
+        let params = |length: &str, salt: &str, info: &str| {
+            format!(
+                r#"<KeyDerivationMethod><HKDFParams><Salt><Specified>{salt}</Specified></Salt><Info>{info}</Info><KeyLength>{length}</KeyLength></HKDFParams></KeyDerivationMethod>"#
+            )
+        };
+        for xml in [
+            params("0", "", ""),
+            params("264", "", ""),
+            params("7", "", ""),
+            params("invalid", "", ""),
+            params("128", "!", ""),
+            params("128", "", "!"),
+        ] {
+            let doc = uppsala::parse(&xml).unwrap();
+            assert!(parse_hkdf_params(&doc, doc.document_element().unwrap(), 16).is_err());
+        }
+        let xml = params("256", "", "");
+        let doc = uppsala::parse(&xml).unwrap();
+        let parsed = parse_hkdf_params(&doc, doc.document_element().unwrap(), 16).unwrap();
+        assert_eq!(parsed.key_length_bits, 256);
+        assert_eq!(parsed.salt, Some(Vec::new()));
+        assert_eq!(parsed.info, Some(Vec::new()));
+        for xml in [
+            "<KeyDerivationMethod><HKDFParams><PRF/></HKDFParams></KeyDerivationMethod>",
+            "<KeyDerivationMethod><HKDFParams><Salt/></HKDFParams></KeyDerivationMethod>",
+        ] {
+            let doc = uppsala::parse(xml).unwrap();
+            assert!(parse_hkdf_params(&doc, doc.document_element().unwrap(), 16).is_err());
+        }
+    }
+
+    #[test]
+    fn oaep_parameters_reject_malformed_declared_values() {
+        let fixture = |params: &str| {
+            format!(
+                r#"<xenc:EncryptionMethod xmlns:xenc="http://www.w3.org/2001/04/xmlenc#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:xenc11="http://www.w3.org/2009/xmlenc11#">{params}</xenc:EncryptionMethod>"#
+            )
+        };
+        for params in [
+            "<xenc:OAEPparams>!</xenc:OAEPparams>",
+            "<ds:DigestMethod/>",
+            "<xenc11:MGF/>",
+        ] {
+            let xml = fixture(params);
+            let doc = uppsala::parse(&xml).unwrap();
+            assert!(read_oaep_params(&doc, doc.document_element().unwrap()).is_err());
+        }
+        let xml = fixture("<xenc:OAEPparams></xenc:OAEPparams>");
+        let doc = uppsala::parse(&xml).unwrap();
+        assert_eq!(
+            read_oaep_params(&doc, doc.document_element().unwrap())
+                .unwrap()
+                .oaep_params,
+            Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn gcm_document_decryption_rejects_changed_authentication_tag() {
+        use base64::Engine;
+        let key = [0x42; 16];
+        let cipher = ribergshamra_crypto::cipher::from_uri(algorithm::AES128_GCM).unwrap();
+        let mut ciphertext = cipher.encrypt(&key, b"synthetic plaintext").unwrap();
+        let last = ciphertext.len() - 1;
+        ciphertext[last] ^= 1;
+        let xml = format!(
+            r#"<xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#"><xenc:EncryptionMethod Algorithm="{}"/><xenc:CipherData><xenc:CipherValue>{}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData>"#,
+            algorithm::AES128_GCM,
+            base64::engine::general_purpose::STANDARD.encode(ciphertext)
+        );
+        let mut keys = ribergshamra_keys::KeysManager::new();
+        keys.add_key(ribergshamra_keys::Key::new(
+            ribergshamra_keys::KeyData::from_symmetric_bytes(riptering::KeyAlgorithm::Aes, &key)
+                .unwrap(),
+            ribergshamra_keys::KeyUsage::Any,
+        ));
+        assert!(decrypt_to_bytes(&EncContext::new(keys), &xml).is_err());
+    }
 
     /// Build a minimal PBKDF2 `KeyDerivationMethod` with a caller-selected
     /// iteration count.
@@ -1742,7 +1922,7 @@ mod tests {
             <xenc:CipherValue>SGVsbG8gV29ybGQ=</xenc:CipherValue>
         </xenc:CipherData>"#;
         let doc = uppsala::parse(xml).unwrap();
-        let id_map = build_id_map(&doc, &["Id", "ID", "id"]);
+        let id_map = ribergshamra_xml::document::build_id_map(&doc, &["Id", "ID", "id"]).unwrap();
         let root = doc.document_element().unwrap();
         let ctx = EncContext::new(ribergshamra_keys::KeysManager::new());
         let result = read_cipher_data(&ctx, &doc, root, &id_map).unwrap();

@@ -20,6 +20,10 @@ legacy-algorithms = ["riptering/legacy"]
 post-quantum = ["riptering/post-quantum"]
 pkcs11 = ["riptering/pkcs11"]
 
+# Explicit compatibility opt-in to unpatched RustCrypto RSA decryption.
+# Independent of legacy-algorithms and never enabled by default.
+legacy-rsa-decryption = ["riptering/legacy-rsa-decryption"]
+
 [dependencies]
 ribergshamra-core.workspace = true
 riptering.workspace = true

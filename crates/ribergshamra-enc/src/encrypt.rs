@@ -8,6 +8,7 @@
 use crate::context::EncContext;
 use ribergshamra_core::{algorithm, ns, Error};
 use uppsala::{Document, NodeId, XmlWriter};
+use zeroize::Zeroizing;
 
 /// Encrypt XML data using a template.
 ///
@@ -17,7 +18,12 @@ use uppsala::{Document, NodeId, XmlWriter};
 ///
 /// Returns the XML document with `<EncryptedData>` populated.
 pub fn encrypt(ctx: &EncContext, template_xml: &str, data: &[u8]) -> Result<String, Error> {
-    let doc = uppsala::parse(template_xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    ribergshamra_xml::limits::validate_input_size(data.len())?;
+    let doc = ribergshamra_xml::limits::parse(template_xml)
+        .map_err(|e| Error::XmlParse(e.to_string()))?;
+    let mut id_attrs = vec!["Id", "ID", "id", "AssertionID"];
+    id_attrs.extend(ctx.id_attrs.iter().map(String::as_str));
+    ribergshamra_xml::document::build_id_map(&doc, &id_attrs)?;
 
     // Find EncryptedData element
     let enc_data_id = find_element(&doc, ns::ENC, ns::node::ENCRYPTED_DATA)
@@ -33,7 +39,7 @@ pub fn encrypt(ctx: &EncContext, template_xml: &str, data: &[u8]) -> Result<Stri
         .ok_or_else(|| Error::MissingAttribute("Algorithm on EncryptionMethod".into()))?;
 
     // Resolve encryption key
-    let key_bytes = resolve_encryption_key(ctx, &doc, enc_data_id, enc_uri)?;
+    let key_bytes = Zeroizing::new(resolve_encryption_key(ctx, &doc, enc_data_id, enc_uri)?);
 
     // Encrypt the data
     let cipher_alg = ribergshamra_crypto::cipher::from_uri(enc_uri)?;
@@ -173,7 +179,7 @@ fn encrypt_session_key(
     _data_enc_uri: &str,
     session_key: &[u8],
 ) -> Result<String, Error> {
-    let doc = uppsala::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
+    let doc = ribergshamra_xml::limits::parse(xml).map_err(|e| Error::XmlParse(e.to_string()))?;
 
     // Find EncryptedKey elements
     let mut result = xml.to_owned();
@@ -230,7 +236,7 @@ fn encrypt_session_key(
                         .map_err(map_riptering_err)?
                 } else {
                     // Software path
-                    let oaep_params = read_oaep_params(&doc, enc_method_id);
+                    let oaep_params = crate::decrypt::read_oaep_params(&doc, enc_method_id)?;
                     let transport = ribergshamra_crypto::keytransport::from_uri_with_params(
                         enc_uri,
                         oaep_params,
@@ -259,6 +265,7 @@ fn encrypt_session_key(
                     if let Some(kek) =
                         resolve_agreement_method_encrypt(ctx, &doc, node_id, expected_kek_size)?
                     {
+                        let kek = Zeroizing::new(kek);
                         // Fill in OriginatorKeyInfo's KeyValue with the originator's public key
                         result = fill_originator_key_value(ctx, &doc, node_id, &result)?;
                         kw.wrap(&kek, session_key)?
@@ -296,7 +303,7 @@ fn encrypt_session_key(
             | algorithm::AES256_GCM
             | algorithm::TRIPLEDES_CBC => {
                 let cipher = ribergshamra_crypto::cipher::from_uri(enc_uri)?;
-                let kek_bytes = resolve_encrypted_key_kek(ctx, &doc, node_id)?;
+                let kek_bytes = Zeroizing::new(resolve_encrypted_key_kek(ctx, &doc, node_id)?);
                 cipher.encrypt(&kek_bytes, session_key)?
             }
             _ => {
@@ -432,7 +439,7 @@ fn resolve_agreement_method_encrypt(
     // Resolve recipient public key (by name in RecipientKeyInfo)
     let recipient_key = resolve_recipient_public_key(ctx, doc, agreement_id)?;
 
-    let shared_secret = match agreement_alg {
+    let shared_secret = Zeroizing::new(match agreement_alg {
         algorithm::ECDH_ES => {
             // Get recipient's public key bytes (SEC1 uncompressed point)
             let recipient_public_bytes = recipient_key
@@ -469,7 +476,7 @@ fn resolve_agreement_method_encrypt(
                 "key agreement: {agreement_alg}"
             )));
         }
-    };
+    });
 
     // Apply KDF to derive KEK
     let kdf_method_id = find_child_element(
@@ -655,47 +662,6 @@ fn extract_prefix<'a>(xml_fragment: &'a str, local_name: &str) -> &'a str {
         }
     }
     ""
-}
-
-/// Read RSA-OAEP parameters from EncryptionMethod child elements.
-fn read_oaep_params(
-    doc: &Document<'_>,
-    enc_method_id: NodeId,
-) -> ribergshamra_crypto::keytransport::OaepParams {
-    let mut params = ribergshamra_crypto::keytransport::OaepParams::default();
-
-    for child_id in doc.children(enc_method_id) {
-        let elem = match doc.element(child_id) {
-            Some(e) => e,
-            None => continue,
-        };
-        let local = &*elem.name.local_name;
-        let child_ns = elem.name.namespace_uri.as_deref().unwrap_or("");
-
-        if local == ns::node::DIGEST_METHOD && (child_ns == ns::DSIG || child_ns == ns::ENC) {
-            if let Some(alg) = elem.get_attribute(ns::attr::ALGORITHM) {
-                params.digest_uri = Some(alg.to_owned());
-            }
-        }
-        if local == ns::node::RSA_MGF && (child_ns == ns::ENC11 || child_ns == ns::ENC) {
-            if let Some(alg) = elem.get_attribute(ns::attr::ALGORITHM) {
-                params.mgf_uri = Some(alg.to_owned());
-            }
-        }
-        if local == ns::node::RSA_OAEP_PARAMS {
-            let text = doc.text_content_deep(child_id);
-            let clean: String = text.trim().chars().filter(|c| !c.is_whitespace()).collect();
-            if !clean.is_empty() {
-                use base64::Engine;
-                let engine = base64::engine::general_purpose::STANDARD;
-                if let Ok(bytes) = engine.decode(&clean) {
-                    params.oaep_params = Some(bytes);
-                }
-            }
-        }
-    }
-
-    params
 }
 
 // -- Helper functions --

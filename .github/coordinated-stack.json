@@ -1,0 +1,14 @@
+{
+  "riptering": {
+    "revision": "b4b3dbe9bcc2efcea5d6ec5a08df5f6f56b7a860",
+    "packages": {
+      "riptering": "."
+    }
+  },
+  "ritsp-ltv": {
+    "revision": "f15d56396dc0764b98d7bb352c1528411897b031",
+    "packages": {
+      "ritsp-ltv": "."
+    }
+  }
+}

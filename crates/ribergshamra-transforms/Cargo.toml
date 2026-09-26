@@ -20,6 +20,10 @@ legacy-algorithms = ["ribergshamra-crypto/legacy-algorithms", "ribergshamra-keys
 post-quantum = ["ribergshamra-crypto/post-quantum", "ribergshamra-keys/post-quantum"]
 pkcs11 = ["ribergshamra-crypto/pkcs11", "ribergshamra-keys/pkcs11"]
 
+# Explicit compatibility opt-in to unpatched RustCrypto RSA decryption.
+# Independent of legacy-algorithms and never enabled by default.
+legacy-rsa-decryption = ["ribergshamra-crypto/legacy-rsa-decryption", "ribergshamra-keys/legacy-rsa-decryption"]
+
 [dependencies]
 ribergshamra-core.workspace = true
 ribergshamra-xml.workspace = true

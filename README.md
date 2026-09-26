@@ -275,10 +275,13 @@ Detached bytes that ribergshamra should hash locally must be mapped explicitly
 with `DsigContext::add_url_map("URI", "file")` or CLI `--url-map URI=FILE`.
 Mappings match the URI exactly, or the same URI with a `#fragment` suffix.
 For XML-DSig compatibility, simple relative local file references are also
-resolved against the input directory/current working directory. Absolute paths
-URI schemes, and parent-directory traversal are rejected for local-file
-fallback, and detached bytes are redacted from verifier debug output so an
-invalid signature cannot print local file contents.
+resolved under an explicitly configured `DsigContext::base_dir`; the CLI sets
+this to the input XML directory. Signing, verification, and certificate retrieval
+never fall back to the process's current directory. External files must be
+regular files no larger than 16 MiB, including files selected by URL maps.
+Absolute paths, URI schemes, parent-directory traversal, and symlink escapes
+are rejected for relative-file lookup. Detached bytes are redacted from
+verifier debug output so an invalid signature cannot print local file contents.
 
 You should always check that the signature covers the element you intend to
 consume. For example, a SAML Service Provider should verify that one of the
@@ -336,6 +339,44 @@ before invoking PBKDF2. `EncContext::new()` uses
 `EncContext::max_pbkdf2_iterations` or use
 `EncContext::with_max_pbkdf2_iterations()` when a deployment needs a lower or
 higher CPU budget. A value of `0` rejects XML Encryption PBKDF2 usage.
+
+PBKDF2 output is limited to 1–32 bytes, covering the supported document ciphers
+and key-wrapping algorithms. HKDF output must be a positive multiple of eight
+bits, at most 256 bits. Malformed declared HKDF and RSA-OAEP parameters fail
+instead of silently reverting to defaults.
+
+### Transform chain limit
+
+Locally executed DSig reference chains, XML Encryption `CipherReference`, and
+`TransformPipeline::execute` reject chains exceeding 32 transforms before
+executing them. Trusted callers
+using a pipeline directly can choose another count with
+`TransformPipeline::execute_with_limit`. Security entrypoints also apply shared
+XML byte/node/depth, expression work, and output budgets. XSLT execution shares
+finite recursion/work/output counters. See [security processing limits](docs/security-limits.md)
+for defaults, caller-built DOM handling, and compatibility effects.
+XML-DSig XPath and XPath Filter 2.0 processing also cap delimiter nesting and
+recursive boolean/union expression processing at 64 levels. Expressions over
+that limit fail with a transform error before recursive processing.
+
+### PKCS#12 import limits
+
+`ribergshamra_pkcs12::parse_pkcs12` limits encoded input to 16 MiB, passwords and
+individual salts to 64 KiB, each derivation to one million iterations, total
+derivation work to ten million iteration/hash-block units, ContentInfo entries
+to 128, and total bags to 4096. Use `parse_pkcs12_with_limits` with `Pkcs12Limits`
+to lower these budgets or import larger trusted containers. These work units
+do not guarantee a wall-clock duration. MAC verification uses a constant-time
+comparison of full digests.
+
+### Software RSA decryption policy
+
+RustCrypto RSA decryption is disabled by default, independently of
+`legacy-algorithms`. The explicit `legacy-rsa-decryption` feature restores the
+unpatched path for compatibility. It does not provide timing-side-channel
+resistance. RSA encryption/signing and other providers retain their own policy.
+See [security processing limits](docs/security-limits.md) for migration and the
+coordinated dependency-release requirement.
 
 ### Recommended configuration for SAML
 

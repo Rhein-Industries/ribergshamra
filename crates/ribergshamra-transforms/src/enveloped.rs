@@ -41,7 +41,7 @@ impl Transform for EnvelopedSignatureTransform {
         match input {
             TransformData::Xml { xml_text, node_set } => {
                 let ns = {
-                    let doc = uppsala::parse(xml_text.as_ref())
+                    let doc = ribergshamra_xml::limits::parse(xml_text.as_ref())
                         .map_err(|e| Error::XmlParse(e.to_string()))?;
 
                     // Build a node set that excludes the Signature subtree.

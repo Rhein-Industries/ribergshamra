@@ -1,7 +1,8 @@
 //! Performance harness for ribergshamra-c14n.
 //!
 //! Measures the hot paths exercised by every XML-DSig / XML-Enc operation:
-//! XML parsing, inclusive/exclusive canonicalization, and entity escaping.
+//! XML parsing, repeated parsing, NodeSet operations, XPath reference helpers,
+//! inclusive/exclusive canonicalization, and entity escaping.
 //!
 //! Inputs are generated deterministically in-code so the harness is fully
 //! reproducible and self-contained (no dependency on the `test-data/` symlink).
@@ -12,6 +13,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use ribergshamra_c14n::{escape, exclusive, inclusive};
+use ribergshamra_xml::{xpath, NodeSet, XmlDocument};
 
 const NO_PREFIXES: &[&str] = &[];
 
@@ -80,6 +82,125 @@ fn bench_parse(c: &mut Criterion) {
             });
         });
     }
+    group.finish();
+}
+
+/// Diagnose the cost of validating owned XML and then reparsing it for DOM use.
+/// This includes the input clone, both parses, and the resulting DOM drops.
+fn bench_repeated_parse(c: &mut Criterion) {
+    let inputs = [
+        ("saml", saml_shaped()),
+        ("text_heavy", text_heavy()),
+        ("attr_heavy", attr_heavy()),
+    ];
+    let mut group = c.benchmark_group("parse_repeated");
+    for (name, xml) in &inputs {
+        group.throughput(Throughput::Bytes(xml.len() as u64));
+        group.bench_function(*name, |b| {
+            b.iter(|| {
+                let owned = XmlDocument::parse(black_box(xml).clone()).unwrap();
+                let doc = owned.parse_doc().unwrap();
+                black_box(doc.root());
+            });
+        });
+    }
+    group.finish();
+}
+
+/// Diagnose subtree construction and set algebra with a pre-parsed document.
+/// The operation inputs are built before timing; result allocation/drop is timed.
+fn bench_nodeset(c: &mut Criterion) {
+    let xml = saml_shaped();
+    let doc = uppsala::parse(&xml).unwrap();
+    let saml_ns = "urn:oasis:names:tc:SAML:2.0:assertion";
+    let assertions = doc.get_elements_by_tag_name_ns(saml_ns, "Assertion");
+    let subjects = doc.get_elements_by_tag_name_ns(saml_ns, "Subject");
+    let assertion = NodeSet::tree_with_comments(assertions[0], &doc);
+    let subject = NodeSet::tree_with_comments(subjects[0], &doc);
+    let sibling = NodeSet::tree_with_comments(assertions[1], &doc);
+    eprintln!(
+        "SAML NodeSet diagnostic: {} bytes, {} document nodes, {} assertion nodes, {} subject nodes",
+        xml.len(),
+        doc.descendants(doc.root()).len() + 1,
+        assertion.len(),
+        subject.len()
+    );
+
+    let mut group = c.benchmark_group("nodeset_saml");
+    group.bench_function("document_element_compact", |b| {
+        b.iter(|| {
+            black_box(NodeSet::tree_with_comments(
+                black_box(doc.document_element().unwrap()),
+                black_box(&doc),
+            ))
+        });
+    });
+    group.bench_function("assertion_subtree", |b| {
+        b.iter(|| {
+            black_box(NodeSet::tree_with_comments(
+                black_box(assertions[0]),
+                black_box(&doc),
+            ))
+        });
+    });
+    group.bench_function("intersection_subject", |b| {
+        b.iter(|| black_box(black_box(&assertion).intersection(black_box(&subject))));
+    });
+    group.bench_function("union_sibling_assertion", |b| {
+        b.iter(|| black_box(black_box(&assertion).union(black_box(&sibling))));
+    });
+    group.bench_function("subtract_subject", |b| {
+        b.iter(|| black_box(black_box(&assertion).subtract(black_box(&subject))));
+    });
+    group.finish();
+}
+
+/// Diagnose public XPath helpers used for same-document references and strict
+/// target-position checks. XML parsing and ID indexing are outside the timing.
+fn bench_xpath_helpers(c: &mut Criterion) {
+    let xml = saml_shaped();
+    let owned = XmlDocument::parse(xml).unwrap();
+    let doc = owned.parse_doc().unwrap();
+    let id_map = owned.build_id_map(&doc).unwrap();
+    let saml_ns = "urn:oasis:names:tc:SAML:2.0:assertion";
+    let assertions = doc.get_elements_by_tag_name_ns(saml_ns, "Assertion");
+    let data = doc.get_elements_by_tag_name_ns(saml_ns, "SubjectConfirmationData")[0];
+    eprintln!(
+        "SAML XPath helper diagnostic: {} registered IDs",
+        id_map.len()
+    );
+
+    let mut group = c.benchmark_group("xpath_helpers_saml");
+    group.bench_function("resolve_preindexed_id", |b| {
+        b.iter(|| {
+            black_box(
+                xpath::resolve_id(
+                    black_box(&doc),
+                    black_box(&id_map),
+                    black_box("_assertion20"),
+                )
+                .unwrap(),
+            )
+        });
+    });
+    group.bench_function("ancestor_match", |b| {
+        b.iter(|| {
+            black_box(xpath::is_ancestor_or_self(
+                black_box(&doc),
+                black_box(assertions[0]),
+                black_box(data),
+            ))
+        });
+    });
+    group.bench_function("ancestor_no_match", |b| {
+        b.iter(|| {
+            black_box(xpath::is_ancestor_or_self(
+                black_box(&doc),
+                black_box(assertions[1]),
+                black_box(data),
+            ))
+        });
+    });
     group.finish();
 }
 
@@ -160,6 +281,9 @@ fn bench_escape(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_parse,
+    bench_repeated_parse,
+    bench_nodeset,
+    bench_xpath_helpers,
     bench_c14n_inclusive,
     bench_c14n_exclusive,
     bench_escape

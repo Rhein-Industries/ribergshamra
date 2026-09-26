@@ -259,70 +259,20 @@ pub fn load_pkcs12(data: &[u8], password: &str) -> Result<Key, Error> {
 
 /// Load a private key from encrypted PEM (PKCS#8 ENCRYPTED PRIVATE KEY).
 ///
-/// Tries RSA, then EC P-256, P-384 in order.
+/// Decode and decrypt once, then identify the private-key algorithm from DER.
 fn load_encrypted_pem(pem_data: &[u8], password: &str) -> Result<Key, Error> {
-    use pkcs8::DecodePrivateKey;
-    let pem_str = std::str::from_utf8(pem_data)
-        .map_err(|e| Error::Key(format!("invalid PEM encoding: {e}")))?;
+    std::str::from_utf8(pem_data).map_err(|e| Error::Key(format!("invalid PEM encoding: {e}")))?;
 
-    // Try RSA
-    if let Ok(pk) = rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(pem_str, password) {
-        let public = pk.to_public_key();
-        return Ok(Key::new(
-            KeyData::Rsa {
-                private: Some(pk),
-                public,
-            },
-            KeyUsage::Any,
-        ));
-    }
-
-    // Try EC P-256
-    if let Ok(sk) = p256::ecdsa::SigningKey::from_pkcs8_encrypted_pem(pem_str, password) {
-        let vk = *sk.verifying_key();
-        return Ok(Key::new(
-            KeyData::EcP256 {
-                private: Some(sk),
-                public: vk,
-            },
-            KeyUsage::Any,
-        ));
-    }
-
-    // Try EC P-384
-    if let Ok(sk) = p384::ecdsa::SigningKey::from_pkcs8_encrypted_pem(pem_str, password) {
-        let vk = *sk.verifying_key();
-        return Ok(Key::new(
-            KeyData::EcP384 {
-                private: Some(sk),
-                public: vk,
-            },
-            KeyUsage::Any,
-        ));
-    }
-
-    // Try EC P-521
-    if let Ok(secret) = p521::SecretKey::from_pkcs8_encrypted_pem(pem_str, password) {
-        let sk = p521::ecdsa::SigningKey::from(ecdsa::SigningKey::from(secret));
-        let vk = p521::ecdsa::VerifyingKey::from(&sk);
-        return Ok(Key::new(
-            KeyData::EcP521 {
-                private: Some(sk),
-                public: vk,
-            },
-            KeyUsage::Any,
-        ));
-    }
-
-    // Try generic decrypt via pem-rfc7468 + DER parse (catches DSA and others)
-    {
-        if let Ok((_label, der_bytes)) = pem_rfc7468::decode_vec(pem_data) {
-            use pkcs8::der::Decode;
-            if let Ok(enc_pki) = pkcs8::EncryptedPrivateKeyInfo::from_der(&der_bytes) {
-                if let Ok(der_doc) = enc_pki.decrypt(password) {
-                    if let Ok(key) = load_private_key_pkcs8_der(der_doc.as_bytes()) {
-                        return Ok(key);
-                    }
+    // The password KDF is independent of the enclosed key algorithm. Retrying
+    // decryption for each algorithm repeats its most expensive work.
+    if let Ok((_label, der_bytes)) = pem_rfc7468::decode_vec(pem_data) {
+        let der_bytes = zeroize::Zeroizing::new(der_bytes);
+        use pkcs8::der::Decode;
+        if let Ok(enc_pki) = pkcs8::EncryptedPrivateKeyInfo::from_der(&der_bytes) {
+            // SecretDocument clears the decrypted PKCS#8 bytes on every exit.
+            if let Ok(der_doc) = enc_pki.decrypt(password) {
+                if let Ok(key) = load_private_key_pkcs8_der(der_doc.as_bytes()) {
+                    return Ok(key);
                 }
             }
         }
@@ -381,6 +331,8 @@ pub fn load_pem_auto(pem_data: &[u8], password: Option<&str>) -> Result<Key, Err
 pub fn load_spki_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let (_label, der_bytes) = pem_rfc7468::decode_vec(pem_data)
         .map_err(|e| Error::Key(format!("failed to decode SPKI PEM: {e}")))?;
+    // Auto-detection can pass a private-key PEM through this public-key path.
+    let der_bytes = zeroize::Zeroizing::new(der_bytes);
     load_spki_der(&der_bytes)
 }
 
@@ -388,6 +340,7 @@ pub fn load_spki_pem(pem_data: &[u8]) -> Result<Key, Error> {
 fn load_generic_pkcs8_pem(pem_data: &[u8]) -> Result<Key, Error> {
     let (label, der_bytes) = pem_rfc7468::decode_vec(pem_data)
         .map_err(|e| Error::Key(format!("failed to decode PEM: {e}")))?;
+    let der_bytes = zeroize::Zeroizing::new(der_bytes);
     match label {
         "PRIVATE KEY" => load_private_key_pkcs8_der(&der_bytes),
         "PUBLIC KEY" => load_spki_der(&der_bytes),
@@ -406,6 +359,7 @@ pub fn load_x509_cert_pem(pem_data: &[u8]) -> Result<Key, Error> {
     // Extract DER from PEM
     let (label, der_bytes) = pem_rfc7468::decode_vec(trimmed.as_bytes())
         .map_err(|e| Error::Key(format!("failed to decode certificate PEM: {e}")))?;
+    let der_bytes = zeroize::Zeroizing::new(der_bytes);
 
     if label != "CERTIFICATE" {
         return Err(Error::Key(format!(
@@ -1247,6 +1201,36 @@ mod tests {
             load_key_file_with_password(pem_path, Some("secret123")).expect("load encrypted PEM");
         assert_eq!(key.data.algorithm(), riptering::KeyAlgorithm::Rsa);
         assert!(key.has_private_key());
+    }
+
+    #[test]
+    fn test_load_encrypted_pem_preserves_ec_and_dsa_public_keys() {
+        let fixtures = std::path::Path::new("../../test-data/keys");
+        for name in [
+            "ec/ec-prime256v1",
+            "ec/ec-prime384v1",
+            "ec/ec-prime521v1",
+            "dsa/dsa-2048",
+        ] {
+            let encrypted = load_key_file_with_password(
+                &fixtures.join(format!("{name}-key.p8-pem")),
+                Some("secret123"),
+            )
+            .unwrap_or_else(|error| panic!("encrypted fixture {name}: {error}"));
+            let plain = load_key_file(&fixtures.join(format!("{name}-key.pem")))
+                .unwrap_or_else(|error| panic!("plain fixture {name}: {error}"));
+            assert!(encrypted.has_private_key(), "fixture: {name}");
+            assert_eq!(
+                encrypted.data.algorithm(),
+                plain.data.algorithm(),
+                "fixture: {name}"
+            );
+            assert_eq!(
+                encrypted.data.to_spki_der(),
+                plain.data.to_spki_der(),
+                "fixture: {name}"
+            );
+        }
     }
 
     #[test]
